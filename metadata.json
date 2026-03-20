@@ -1,0 +1,5 @@
+{
+  "name": "CopyCanto",
+  "description": "AI-powered voice cloning and song cover generation platform.",
+  "requestFramePermissions": ["microphone"]
+}

@@ -1,0 +1,177 @@
+PRD: CopyCanto — The Ultimate Voice Cloning & Singing App
+Version: 1.1 (March 2026)
+Status: BUILD-READY (Post-Red Team Audit)
+Target Platform: Web (Optimized for macOS / M1 Max Local Execution)
+
+SECTION 1: EXECUTIVE OVERVIEW
+1.1 — Product Vision Statement
+CopyCanto is a professional-grade, locally-hosted singing voice conversion suite. It empowers creators to clone any voice with high fidelity (RVC v2) or instant zero-shot speed (kNN-SVC), and seamlessly apply those clones to existing songs or YouTube tracks through high-precision stem separation (Demucs v4).
+
+1.2 — Success Metrics & KPIs
+| Category | Metric | Target (MVP) | Measurement Method |
+|---|---|---|---|
+| Quality | Fidelity Score | >= 9.0/10 | Internal blind A/B testing |
+| Stability | OOM Crash Rate | 0% | Error log monitoring (Sequential Guard) |
+| Speed | Conversion Time | < 30s (kNN) | Backend execution logs |
+
+SECTION 2: FEASIBILITY SPIKES
+2.1 — Spike Identification
+SPIKE 1: Sequential Metal (MPS) Orchestrator
+	•	RISK: Concurrent execution of Demucs and RVC will crash the M1 Max 32GB.
+	•	TEST: A Rust-based Mutex guard that prevents Process B from starting until Process A returns Exit Code 0.
+	•	SUCCESS: Memory peaks at <24GB during heavy workloads.
+
+SPIKE 2: RVC v2 Metal (MPS) Inference
+	•	RISK: RVC is optimized for CUDA; Metal support can be unstable.
+	•	TEST: Execute a 3-minute conversion using --device mps and verify output audio integrity.
+	•	SUCCESS: Inference completes in < 1x realtime (3 mins audio in < 3 mins).
+
+SPIKE 3: YouTube-to-Demucs File Handoff (NEW)
+	•	RISK: yt-dlp file permissions and naming conventions may break the Demucs input path.
+	•	TEST: Download a video -> extract audio -> move to stems/ -> trigger Demucs via a single automated script.
+	•	SUCCESS: Automated pipeline produces isolated stems from a URL with zero manual file moving.
+
+SECTION 3: APPLICATION STRUCTURE & NAVIGATION
+3.1 — Complete Navigation Hierarchy
+TOP BAR (Glassmorphic):
+├── [Home] — / — Primary Dashboard
+├── [Voice Library] — /voices — Managed Clones
+├── [Song Library] — /songs — Original Stems (Vocals/Instrumental)
+├── [Cover Library] — /covers — Final AI Generated Covers
+└── [Settings] — /settings — App Config & Local Paths
+
+3.2 — Screen Registry
+| Screen ID | Screen Name | Route | Nav Location | Auth |
+|---|---|---|---|---|
+| SCR-001 | Home | / | Top Bar | Local |
+| SCR-002 | Wizard: Engine | /create/engine | Wizard | Local |
+| SCR-003 | Wizard: Voice | /create/voice | Wizard | Local |
+| SCR-004 | Wizard: Source | /create/source | Wizard | Local |
+| SCR-005 | Wizard: Process | /create/processing | Wizard | Local |
+| SCR-006 | Voice Library | /voices | Top Bar | Local |
+| SCR-007 | Song Library | /songs | Top Bar | Local |
+| SCR-008 | Cover Library | /covers | Top Bar | Local |
+
+SECTION 4: ENTITY LIFECYCLE STATE MACHINES
+ENTITY: Processing Job
+State | UI Rendering Rule | Trigger
+---|---|---
+QUEUED | Global Overlay: "Waiting... [Position in Queue]" | Active Job > 0
+DOWNLOADING | Progress bar (Blue). Text: "Extracting YouTube Audio..." | yt-dlp start
+SEPARATING | Progress bar (Purple). Text: "Splitting Stems (Demucs)..." | Demucs start
+TRAINING | Progress bar (Gold). Text: "Optimizing Voice Model..." | RVC Train start
+CONVERTING | Progress bar (Green). Text: "Applying Voice Clone..." | Inference start
+COMPLETED | Toast: "Processing Complete!" | All subprocesses finish
+
+SECTION 5: SCREEN SPECIFICATIONS (ANTI-EMPTY-FRONTEND)
+SCREEN: SCR-001 (Home / Dashboard)
+LAYOUT:
+[ Hero Image: Recording Studio ]
+[ Center: "Start New Cover" (Large Photorealistic Mic Button) ]
+[ Bottom: "Recent Activity" Grid (Latest 3 Covers) ]
+DATA SOURCES:
+| UI Element | API Call | DB Source |
+|-----------|---------|-----------|
+| Recent Activity | GET /api/covers?limit=3 | covers collection |
+| Active Job Banner | GET /api/jobs/active | local job_status state |
+FOUR STATES:
+	•	EMPTY: Shows "No covers yet. Start your first cloning project below." + Large Pulsing Mic Button.
+	•	LOADING: Glassmorphic skeleton cards for "Recent Activity".
+	•	LOADED: Renders 3 latest cover cards with play buttons.
+	•	ERROR: "Backend connection lost. Ensure local server is running." + Retry button.
+
+SCREEN: SCR-008 (Cover Library)
+LAYOUT:
+[ Hero Image: Sound Waves ]
+[ Filter Bar: Search by Name, Sort by Date ]
+[ Grid: Cover Cards (Image, Title, Voice Name, Play/Download/Delete) ]
+DATA SOURCES:
+| UI Element | API Call | DB Source |
+|-----------|---------|-----------|
+| Cover Grid | GET /api/covers | covers collection |
+BUTTONS & INTERACTIONS:
+| Element | Action | API Call | Result |
+|---------|--------|---------|--------|
+| Play Icon | Stream Audio | GET /api/stream/covers/{id} | Audio Player starts |
+| Download | Browser Download | GET /api/download/covers/{id} | Local file save |
+| Delete | Delete Item | DELETE /api/covers/{id} | Toast "Deleted", Refreshes Grid |
+
+SECTION 6: API REGISTRY & WIRING
+6.1 — API Endpoint Registry (The Backend Contract)
+| Method | Path | Description | Payload Schema |
+|---|---|---|---|
+| GET | /api/jobs/active | Check for running processes | — |
+| POST | /api/create/start | Initiate the sequential pipeline | { engine, voice_id, source_type, source_url } |
+| GET | /api/voices | Fetch all voice clones | — |
+| POST | /api/voices/train | Start RVC training job | { name, audio_file, avatar_file } |
+| GET | /api/songs | Fetch all processed stems | — |
+| GET | /api/covers | Fetch final generated covers | — |
+| DELETE | /api/covers/{id} | Remove a cover and local file | — |
+
+6.2 — Cross-Feature Wiring Matrix
+| Feature | Target | Handoff Trigger | Data Passed |
+|---|---|---|---|
+| Processing | Cover Lib | JOB_COMPLETE WS | cover_id, file_path |
+| YouTube Extractor | Song Lib | EXTRACTION_DONE Event | song_id, stem_paths |
+| Voice Trainer | Voice Lib | TRAIN_DONE Event | model_path, voice_id |
+
+SECTION 7: TECHNICAL ARCHITECTURE
+7.1 — Asset Storage Protocol (M1 Max Sandbox)
+To bypass browser restrictions, the backend serves files via a Local Assets Proxy:
+	•	Path: http://localhost:8888/assets/{type}/{filename}
+	•	All library images and audio files are accessed via this internal URL.
+
+7.2 — Gemini API Features (Orchestrator)
+Feature: YouTube Metadata Cleaning
+	•	Model: Gemini 2.5 Flash
+	•	System Prompt: "You are a music metadata specialist. Given a YouTube video title, return a clean JSON object with 'artist' and 'song_title'. Remove fluff like '[Official Video]', '(HD)', or artist channel suffixes."
+
+7.3 — Google Stitch Instructions
+	•	Design Tokens: Use Apple-Glass-Dark and Apple-Glass-Light.
+	•	Transitions: Every screen transition must use a 100ms fade-in/out to mimic macOS Monterey.
+	•	Navigation: Buttons must use the liquid-hover animation class.
+
+SECTION 8: BUILD CHUNKING
+| Chunk | Scope | Validation |
+|---|---|---|
+| 1 | Navigation & Empty Shells | All routes render; Top Bar works; Empty states show. |
+| 2 | Sequential Job Mutex | Start Job A -> Click Job B -> Job B waits in Queue. |
+| 3 | Voice Library & Training UI | Can upload audio; Avatar shows; Training progress streams. |
+| 4 | YouTube & Demucs Pipeline | Paste URL -> Progress bar moves -> Stems appear in Library. |
+| 5 | Conversion & Merging | Pick Voice + Pick Song -> Cover generated -> Playback works. |
+| 6 | Polish & Export | Dark/Light mode toggle; Rename/Delete works; Download works. |
+
+SECTION 9: ANTIGRAVITY ROADMAP & OPEN SOURCE ENGINES
+9.1 — Engine Integration Strategy
+CopyCanto is designed as a modular shell for state-of-the-art open source audio engines. The following engines are referenced in the codebase and slated for full integration:
+
+1. RVC v2 (Retrieval-based Voice Conversion)
+   - Role: Primary singing voice conversion engine.
+   - Repo: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI
+   - Integration: Python-based inference script (`engines/process.py`) called via Node.js `child_process`.
+   - Status: Ready for MPS (Metal) optimization.
+
+2. kNN-SVC (k-Nearest Neighbors Singing Voice Conversion)
+   - Role: Instant, zero-shot voice cloning.
+   - Repo: https://github.com/asdfghjkl/knn-svc
+   - Integration: Lightweight inference pipeline for rapid prototyping.
+   - Status: Roadmap Q2 2026.
+
+3. Demucs v4 (Hybrid Transformer Stem Separation)
+   - Role: Source material isolation.
+   - Repo: https://github.com/facebookresearch/demucs
+   - Integration: Pre-processing step for all YouTube and local uploads.
+   - Status: Active pipeline component.
+
+9.2 — Local LLM Orchestration (Ollama)
+Instead of cloud-based Gemini orchestration, CopyCanto uses a local LLM via Ollama for metadata cleaning and job orchestration.
+- Endpoint: `http://localhost:11434/api/generate`
+- Model: `llama3` or `mistral` (Configurable in Settings)
+- System Prompt: "You are a music metadata specialist. Given a YouTube video title, return a clean JSON object with 'artist' and 'song_title'. Remove fluff like '[Official Video]', '(HD)', or artist channel suffixes."
+
+9.3 — Antigravity Handoff Protocol
+To ensure seamless takeover by Antigravity, the following architectural standards are maintained:
+- Firebase as Source of Truth: All job states, metadata, and user preferences are synced via Firestore.
+- Sequential Mutex: Backend logic ensures only one heavy GPU/MPS task runs at a time to prevent OOM.
+- Standardized File Paths: All assets are stored in a predictable `/assets/{type}/{id}` structure.
+- API-First Design: The frontend communicates exclusively via the documented REST API, allowing the backend to be swapped or scaled independently.

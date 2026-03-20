@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "Voice": {
+      "title": "Voice",
+      "description": "An AI voice model used for cloning and song generation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the voice." },
+        "name": { "type": "string", "description": "Display name of the voice." },
+        "avatar": { "type": "string", "description": "URL to the voice's avatar image." },
+        "description": { "type": "string", "description": "Short description of the voice's characteristics." },
+        "tags": { "type": "array", "items": { "type": "string" }, "description": "Tags describing the voice's style." },
+        "isPublic": { "type": "boolean", "description": "Whether the voice is available to all users." },
+        "creatorId": { "type": "string", "description": "UID of the user who created the voice." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the voice was created." }
+      },
+      "required": ["id", "name", "avatar", "creatorId", "createdAt"]
+    },
+    "Song": {
+      "title": "Song",
+      "description": "An original song or stem set used as a source.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the song." },
+        "title": { "type": "string", "description": "Title of the song." },
+        "artist": { "type": "string", "description": "Original artist of the song." },
+        "thumbnail": { "type": "string", "description": "URL to the song's thumbnail image." },
+        "audioUrl": { "type": "string", "description": "URL to the audio file." },
+        "userId": { "type": "string", "description": "UID of the user who uploaded the song." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the song was uploaded." }
+      },
+      "required": ["id", "title", "artist", "thumbnail", "audioUrl", "userId", "createdAt"]
+    },
+    "Cover": {
+      "title": "Cover",
+      "description": "A generated AI song cover.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the cover." },
+        "title": { "type": "string", "description": "Title of the cover." },
+        "artist": { "type": "string", "description": "Original artist of the song." },
+        "thumbnail": { "type": "string", "description": "URL to the cover's thumbnail image." },
+        "audioUrl": { "type": "string", "description": "URL to the generated audio file." },
+        "voiceId": { "type": "string", "description": "ID of the voice used for the cover." },
+        "voiceName": { "type": "string", "description": "Name of the voice used for the cover." },
+        "userId": { "type": "string", "description": "UID of the user who generated the cover." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the cover was generated." }
+      },
+      "required": ["id", "title", "artist", "thumbnail", "audioUrl", "voiceId", "voiceName", "userId", "createdAt"]
+    },
+    "Job": {
+      "title": "Job",
+      "description": "A background task for voice training or song generation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the job." },
+        "type": { "type": "string", "enum": ["download", "separation", "training", "conversion"], "description": "Type of task being performed." },
+        "status": { "type": "string", "enum": ["pending", "processing", "completed", "failed"], "description": "Current status of the job." },
+        "progress": { "type": "number", "description": "Percentage completion of the job." },
+        "message": { "type": "string", "description": "Status message or error details." },
+        "targetId": { "type": "string", "description": "ID of the voice or song being processed." },
+        "userId": { "type": "string", "description": "UID of the user who initiated the job." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the job was created." }
+      },
+      "required": ["id", "type", "status", "progress", "userId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/voices": { "schema": "Voice", "description": "Collection of available AI voices." },
+    "/songs": { "schema": "Song", "description": "Collection of original songs and stems." },
+    "/covers": { "schema": "Cover", "description": "Collection of generated AI song covers." },
+    "/jobs": { "schema": "Job", "description": "Collection of active and completed background tasks." }
+  }
+}

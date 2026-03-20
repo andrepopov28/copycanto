@@ -1,0 +1,191 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-brand-primary: #6366f1;
+  --color-brand-secondary: #a855f7;
+  --color-brand-accent: #ec4899;
+  
+  /* Theme Variables */
+  --color-bg-main: var(--bg-color);
+  --color-text-main: var(--text-color);
+  --color-text-muted: var(--text-muted);
+  --color-glass-bg: var(--glass-bg);
+  --color-glass-border: var(--glass-border);
+  --color-glass-light-bg: var(--glass-light-bg);
+  --color-glass-light-border: var(--glass-light-border);
+  --color-input-bg: var(--input-bg);
+  --color-input-border: var(--input-border);
+}
+
+:root {
+  --bg-color: #000000;
+  --text-color: #ffffff;
+  --text-muted: rgba(255, 255, 255, 0.4);
+  --glass-bg: rgba(20, 20, 20, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-light-bg: rgba(255, 255, 255, 0.1);
+  --glass-light-border: rgba(255, 255, 255, 0.2);
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --input-border: rgba(255, 255, 255, 0.1);
+}
+
+.light {
+  --bg-color: #f8fafc;
+  --text-color: #0f172a;
+  --text-muted: rgba(15, 23, 42, 0.5);
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(0, 0, 0, 0.1);
+  --glass-light-bg: rgba(0, 0, 0, 0.05);
+  --glass-light-border: rgba(0, 0, 0, 0.1);
+  --input-bg: rgba(0, 0, 0, 0.02);
+  --input-border: rgba(0, 0, 0, 0.1);
+}
+
+@layer base {
+  body {
+    @apply bg-bg-main text-text-main antialiased selection:bg-brand-primary/30 overflow-x-hidden;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-glass-bg backdrop-blur-2xl border border-glass-border shadow-2xl;
+  }
+  
+  .glass-light {
+    @apply bg-glass-light-bg backdrop-blur-xl border border-glass-light-border shadow-xl;
+  }
+
+  .glass-hover {
+    @apply transition-all duration-300 hover:bg-text-main/5 hover:border-text-main/10;
+  }
+
+  /* Apple-style Mouse-over Animations */
+  .apple-hover {
+    @apply transition-all duration-300 ease-out hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] active:brightness-90;
+  }
+
+  .btn-primary {
+    @apply relative overflow-hidden px-6 py-3 rounded-full font-semibold text-white 
+           bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-accent
+           transition-all duration-300 ease-out hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] active:brightness-90
+           shadow-[0_0_20px_rgba(99,102,241,0.4)];
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 rounded-full font-semibold text-text-main/80
+           bg-text-main/5 border border-text-main/10 hover:bg-text-main/10 
+           hover:text-text-main transition-all duration-300 ease-out hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] active:brightness-90;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl bg-input-bg border border-input-border 
+           focus:outline-none focus:ring-2 focus:ring-brand-primary/50 
+           focus:border-brand-primary/50 transition-all duration-300 ease-out hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] active:brightness-90;
+  }
+
+  .card {
+    @apply bg-text-main/5 backdrop-blur-xl border border-text-main/10 shadow-2xl rounded-3xl p-6 transition-all duration-500 ease-out hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] active:brightness-90;
+  }
+
+  /* Liquid Hover Animation */
+  .liquid-hover {
+    @apply relative overflow-hidden transition-all duration-300;
+  }
+
+  .liquid-hover::after {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-r from-brand-primary/20 to-brand-accent/20 
+           translate-y-full transition-transform duration-500 ease-out;
+  }
+
+  .liquid-hover:hover::after {
+    @apply translate-y-0;
+  }
+
+  .liquid-hover:hover {
+    @apply scale-[1.02] shadow-[0_0_30px_rgba(99,102,241,0.3)];
+  }
+
+  /* Prismatic Liquid Hover */
+  .prismatic-liquid-hover {
+    @apply relative overflow-hidden transition-all duration-500;
+  }
+
+  .prismatic-liquid-hover::before {
+    content: '';
+    @apply absolute inset-[-100%] bg-[conic-gradient(from_0deg,#ff0000,#ff00ff,#0000ff,#00ffff,#00ff00,#ffff00,#ff0000)]
+           opacity-0 transition-opacity duration-500 blur-2xl;
+    animation: rotate 4s linear infinite;
+  }
+
+  .prismatic-liquid-hover:hover::before {
+    @apply opacity-20;
+  }
+
+  .prismatic-liquid-hover:hover {
+    @apply scale-[1.02] border-white/40;
+  }
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.5; filter: blur(40px); }
+  50% { opacity: 0.8; filter: blur(60px); }
+}
+
+.glow-bg {
+  @apply absolute -z-10 w-[500px] h-[500px] rounded-full;
+  animation: pulse-glow 10s ease-in-out infinite;
+}
+
+.markdown-body {
+  @apply text-white/80 leading-relaxed;
+}
+
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  @apply text-white font-bold mt-6 mb-4;
+}
+
+.markdown-body p {
+  @apply mb-4;
+}
+
+.markdown-body ul {
+  @apply list-disc list-inside mb-4;
+}
+
+/* Page Transitions */
+.page-enter {
+  opacity: 0;
+  transform: scale(0.98);
+}
+.page-enter-active {
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 100ms, transform 100ms;
+}
+.page-exit {
+  opacity: 1;
+  transform: scale(1);
+}
+.page-exit-active {
+  opacity: 0;
+  transform: scale(0.98);
+  transition: opacity 100ms, transform 100ms;
+}

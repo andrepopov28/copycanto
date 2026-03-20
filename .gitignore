@@ -1,0 +1,26 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# AI Engines
+engines/repos/
+engines/models/
+
+# Local App Data
+storage/
+!storage/db/.keep
+!storage/songs/.keep
+!storage/voices/.keep
+!storage/clones/.keep
+!storage/covers/.keep
+

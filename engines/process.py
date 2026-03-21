@@ -163,7 +163,8 @@ def main():
                 
             elif engine == 'knn':
                 knn_dir = os.path.join(project_dir, 'engines', 'repos', 'knn-svc')
-                knn_ckpt_dir = os.path.join(models_dir, 'knn-svc')
+                # Point to the hifigan dir which contains prematch_g_02500000.pt
+                knn_hifigan_ckpt_dir = os.path.join(knn_dir, 'hifigan')
                 
                 # Correct ref_audio path - use voicePath from args if available
                 ref_audio = args.voicePath
@@ -184,18 +185,16 @@ def main():
 
                 update_progress(job_id, 65, "kNN-SVC: Converting vocals with Nearest Neighbors...")
                 
-                # The ddsp_inference.py actually outputs to the current directory or specified output_dir
-                # It often has a randomized/timestamped filename, so we diff the directory.
+                # Use --ckpt_dir pointing to hifigan/ directory with prematch_g_02500000.pt
+                # ddsp_inference.py outputs to the cwd, so we track new files via diff
                 vocal_dir = os.path.dirname(vocal_track) or "."
                 before_files = set(os.listdir(vocal_dir))
                 
                 try:
-                    # Use sys.executable to run inside our venv
-                    # ddsp_inference.py arguments: <source_audio> <ref_audio> --local_ckpt_dir <dir>
                     subprocess.run([
                         sys.executable, 'ddsp_inference.py',
                         vocal_track, ref_wav,
-                        '--local_ckpt_dir', knn_ckpt_dir
+                        '--ckpt_dir', knn_hifigan_ckpt_dir
                     ], check=True, cwd=knn_dir, capture_output=True)
                 except subprocess.CalledProcessError as e:
                     err_msg = e.stderr.decode('utf-8') if e.stderr else str(e)
@@ -204,13 +203,11 @@ def main():
                 
                 # Detect newly created .wav file
                 after_files = set(os.listdir(vocal_dir))
-                new_files = [f for f in (after_files - before_files) if f.endswith('.wav') and 'knn_ref' not in f]
+                new_files = [f for f in (after_files - before_files) if f.endswith('.wav')]
                 
                 if new_files:
-                    # Pick the most likely one (newest or first)
                     shutil.move(os.path.join(vocal_dir, new_files[0]), converted_output)
                 else:
-                    # Fallback check - maybe it saved into a subfolder?
                     update_progress(job_id, 70, "kNN output not detected via diff, using fallback...")
 
             # Fallback if conversion failed or model was missing

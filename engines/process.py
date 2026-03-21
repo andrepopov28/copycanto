@@ -144,12 +144,18 @@ def main():
             if engine == 'rvc':
                 rvc_dir = os.path.join(project_dir, 'engines', 'repos', 'rvc_v2')
                 env = os.environ.copy()
-                env['weight_root'] = models_dir
+                # weight_root can be clones_dir OR models_dir — rvc infer_cli uses this to find .pth
+                env['weight_root'] = clones_dir  # trained models live in storage/clones/
+                env['PYTHONPATH'] = rvc_dir
+                env['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 
                 # Check for required model weight files
                 hubert_path = os.path.join(rvc_dir, 'assets', 'hubert', 'hubert_base.pt')
                 rmvpe_path = os.path.join(rvc_dir, 'assets', 'rmvpe', 'rmvpe.pt')
-                model_pth = os.path.join(models_dir, f"{args.voiceId}.pth")
+                # Try storage/clones/ first (trained models), then engines/models/ (manually placed)
+                model_pth = os.path.join(clones_dir, f"{args.voiceId}.pth")
+                if not os.path.exists(model_pth):
+                    model_pth = os.path.join(models_dir, f"{args.voiceId}.pth")
                 
                 missing = []
                 if not os.path.exists(hubert_path) or os.path.getsize(hubert_path) < 1_000_000:
@@ -157,23 +163,34 @@ def main():
                 if not os.path.exists(rmvpe_path) or os.path.getsize(rmvpe_path) < 1_000_000:
                     missing.append("RMVPE pitch model (assets/rmvpe/rmvpe.pt, ~200MB) — run: python3 engines/download_models.py")
                 if not os.path.exists(model_pth):
-                    missing.append(f"Voice model: {args.voiceId}.pth — place it in engines/models/")
+                    missing.append(f"Voice model: {args.voiceId}.pth — place it in storage/clones/ or engines/models/")
                 
                 if missing:
                     update_progress(job_id, -1, f"Missing model files: {'; '.join(missing)}")
                     sys.exit(1)
 
                 update_progress(job_id, 65, f"RVC Inference (Voice: {args.voiceId})")
-                subprocess.run([
+                # Prefer MPS for inference on Apple Silicon, fallback cpu
+                import platform
+                rvc_device = 'mps' if platform.system() == 'Darwin' else 'cpu'
+                # Resolve FAISS index path — optional, inference works without it
+                index_path = os.path.join(clones_dir, f"{args.voiceId}.index")
+                if not os.path.exists(index_path):
+                    index_path = os.path.join(models_dir, f"{args.voiceId}.index")
+                if not os.path.exists(index_path):
+                    index_path = ''  # run without index (less precise but functional)
+                infer_cmd = [
                     sys.executable, 'tools/infer_cli.py',
                     '--f0up_key', '0',
                     '--f0method', 'rmvpe',
-                    '--device', 'mps',
+                    '--device', rvc_device,
                     '--input_path', vocal_track,
-                    '--index_path', os.path.join(models_dir, f"{args.voiceId}.index"),
                     '--opt_path', converted_output,
-                    '--model_name', f"{args.voiceId}.pth"
-                ], check=False, cwd=rvc_dir, env=env)
+                    '--model_name', f"{args.voiceId}.pth",
+                ]
+                if index_path:
+                    infer_cmd += ['--index_path', index_path]
+                subprocess.run(infer_cmd, check=False, cwd=rvc_dir, env=env)
                 
             elif engine == 'knn':
                 knn_dir = os.path.join(project_dir, 'engines', 'repos', 'knn-svc')

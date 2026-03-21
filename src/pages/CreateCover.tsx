@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -52,6 +52,15 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
+
+  // MED-2: Clean up any polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
   
   // Selection State
   const [engine, setEngine] = useState<'rvc' | 'knn'>('rvc');
@@ -153,6 +162,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
 
   const handleYoutubeExtract = async (url: string) => {
     setYoutubeUrl(url);
+    setYoutubeError(null);
     if (!url.includes('youtube.com') && !url.includes('youtu.be')) return;
     
     try {
@@ -163,7 +173,11 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
       });
       if (res.ok) {
         const data = await res.json();
-        // create a temporary song object to show in UI
+        // HIGH-2: Detect fallback metadata (Ollama unavailable) and warn user
+        const isOllamaFallback = data.artist === 'YouTube Download' && data.song_title === 'Extracted Audio';
+        if (isOllamaFallback) {
+          setYoutubeError('⚠️ Could not extract song metadata — Ollama is not running. Title will be set to "Extracted Audio". You can rename it in the final step.');
+        }
         setSelectedSong({
           id: 'yt-temp',
           title: data.song_title || 'Unknown Song',
@@ -254,6 +268,11 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
                 onChange={(e) => handleYoutubeExtract(e.target.value)}
                 className="w-full bg-text-main/5 border border-glass-border rounded-xl p-4 text-text-main focus:outline-none focus:border-brand-primary transition-colors"
               />
+              {youtubeError && (
+                <div className="flex items-start gap-2 text-xs text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-xl p-3">
+                  <span>{youtubeError}</span>
+                </div>
+              )}
             </div>
             
             <div className="flex items-center gap-4">

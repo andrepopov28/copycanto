@@ -89,9 +89,23 @@ def main():
             update_progress(job_id, 30, "Splitting Stems (Demucs v4)...")
             # FIX: demucs is a Python module - no standalone binary on this system
             # Use `python3 -m demucs.separate` to call it correctly
+            # Demucs is installed in system Python, NOT in the venv.
+            # Find it using shutil.which or fall back to known locations.
+            import shutil as _shutil
+            demucs_python = _shutil.which('python3') or sys.executable
+            # Prefer system Python over venv if demucs is not in venv
+            for _candidate in ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', sys.executable]:
+                if os.path.exists(_candidate):
+                    try:
+                        import subprocess as _sp
+                        _sp.run([_candidate, '-c', 'import demucs'], check=True, capture_output=True)
+                        demucs_python = _candidate
+                        break
+                    except Exception:
+                        continue
             try:
                 subprocess.run([
-                    sys.executable, '-m', 'demucs.separate',
+                    demucs_python, '-m', 'demucs.separate',
                     '--two-stems=vocals',
                     '-o', demucs_out_dir,
                     raw_audio_path
@@ -163,7 +177,7 @@ def main():
                 
             elif engine == 'knn':
                 knn_dir = os.path.join(project_dir, 'engines', 'repos', 'knn-svc')
-                # Point to the hifigan dir which contains prematch_g_02500000.pt
+                # hifigan/ dir contains mix_g_00898000_harm_no_amp.pt (SmoothKen DDSP checkpoint)
                 knn_hifigan_ckpt_dir = os.path.join(knn_dir, 'hifigan')
                 
                 # Correct ref_audio path - use voicePath from args if available
@@ -185,30 +199,46 @@ def main():
 
                 update_progress(job_id, 65, "kNN-SVC: Converting vocals with Nearest Neighbors...")
                 
-                # Use --ckpt_dir pointing to hifigan/ directory with prematch_g_02500000.pt
-                # ddsp_inference.py outputs to the cwd, so we track new files via diff
-                vocal_dir = os.path.dirname(vocal_track) or "."
-                before_files = set(os.listdir(vocal_dir))
-                
+                # ddsp_inference.py outputs next to the source file as:
+                # <src_basename>_to_<ref_basename>_knn_<ckpt_type>_<post_opt>.wav
+                # We use --ckpt_type mix and --device cpu (MPS lacks float64 support)
                 try:
                     subprocess.run([
                         sys.executable, 'ddsp_inference.py',
                         vocal_track, ref_wav,
-                        '--ckpt_dir', knn_hifigan_ckpt_dir
+                        '--ckpt_dir', knn_hifigan_ckpt_dir,
+                        '--ckpt_type', 'mix',
+                        '--device', 'cpu',
+                        '--topk', '4',
+                        '--prioritize_f0', 'true',
+                        '--tgt_loudness_db', '-16',
+                        '--post_opt', 'no_post_opt',
                     ], check=True, cwd=knn_dir, capture_output=True)
                 except subprocess.CalledProcessError as e:
                     err_msg = e.stderr.decode('utf-8') if e.stderr else str(e)
                     update_progress(job_id, -1, f"kNN-SVC inference failed: {err_msg[:500]}")
                     sys.exit(1)
                 
-                # Detect newly created .wav file
-                after_files = set(os.listdir(vocal_dir))
-                new_files = [f for f in (after_files - before_files) if f.endswith('.wav')]
+                # Output is placed next to the source file with predictable name
+                src_stem = os.path.splitext(os.path.basename(vocal_track))[0]
+                ref_stem = os.path.splitext(os.path.basename(ref_wav))[0]
+                expected_out = os.path.join(
+                    os.path.dirname(vocal_track),
+                    f"{src_stem}_to_{ref_stem}_knn_mix_no_post_opt.wav"
+                )
                 
-                if new_files:
-                    shutil.move(os.path.join(vocal_dir, new_files[0]), converted_output)
+                if os.path.exists(expected_out):
+                    shutil.move(expected_out, converted_output)
                 else:
-                    update_progress(job_id, 70, "kNN output not detected via diff, using fallback...")
+                    # Fallback: scan for any newly created wav
+                    vocal_dir = os.path.dirname(vocal_track) or "."
+                    wavs = sorted([f for f in os.listdir(vocal_dir) if f.endswith('.wav')],
+                                   key=lambda f: os.path.getmtime(os.path.join(vocal_dir, f)),
+                                   reverse=True)
+                    if wavs:
+                        shutil.move(os.path.join(vocal_dir, wavs[0]), converted_output)
+                    else:
+                        update_progress(job_id, 70, "kNN output not detected, using fallback...")
 
             # Fallback if conversion failed or model was missing
             if not os.path.exists(converted_output):

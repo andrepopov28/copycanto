@@ -28,7 +28,8 @@ import {
   addDoc,
   serverTimestamp,
   handleFirestoreError,
-  OperationType
+  OperationType,
+  User
 } from '../db';
 
 interface Voice {
@@ -39,12 +40,13 @@ interface Voice {
   description?: string;
   creatorId: string;
   isPublic: boolean;
+  audioUrl?: string;
 }
 
 import { useNavigate } from 'react-router-dom';
 import { HeroSection } from '../components/HeroSection';
 
-export const Voices: React.FC<{ user: any }> = ({ user }) => {
+export const Voices = ({ user }: { user: User | null }) => {
   const navigate = useNavigate();
   const [voices, setVoices] = useState<Voice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,7 +70,7 @@ export const Voices: React.FC<{ user: any }> = ({ user }) => {
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isRecording) {
-      interval = setInterval(() => setRecordingTime(t => t + 1), 1000);
+      interval = setInterval(() => setRecordingTime((t: number) => t + 1), 1000);
     } else {
       setRecordingTime(0);
     }
@@ -155,15 +157,15 @@ export const Voices: React.FC<{ user: any }> = ({ user }) => {
 
     const voicesQuery = query(
       collection(db, "voices"),
-      where("creatorId", "==", user.uid),
+      where("isPublic", "==", true),
       orderBy("createdAt", "desc")
     );
 
-    const unsubscribe = onSnapshot(voicesQuery, (snapshot) => {
-      const voicesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Voice));
+    const unsubscribe = onSnapshot(voicesQuery, (snapshot: any) => {
+      const voicesData = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Voice));
       setVoices(voicesData);
       setLoading(false);
-    }, (err) => {
+    }, (err: any) => {
       handleFirestoreError(err, OperationType.LIST, "voices");
       setLoading(false);
     });
@@ -203,6 +205,7 @@ export const Voices: React.FC<{ user: any }> = ({ user }) => {
     >
       <HeroSection 
         title="Voice Library"
+        subtitle="Explore and use community-contributed AI voice models."
         imageSrc="/assets/animal_muppet_hero_1773997756233.png"
         badge="Voice Cloning Suite"
       >
@@ -259,7 +262,7 @@ export const Voices: React.FC<{ user: any }> = ({ user }) => {
                 <div className="absolute top-3 left-3">
                   <span className={cn(
                     "text-[10px] font-mono px-2 py-0.5 rounded-full uppercase tracking-widest backdrop-blur-md",
-                    voice.type === 'RVC v2' ? "bg-brand-primary/80 text-white" : "bg-brand-secondary/80 text-white"
+                    voice.type === 'Superman' ? "bg-brand-primary/80 text-white" : "bg-brand-secondary/80 text-white"
                   )}>
                     {voice.type || 'Source Audio'}
                   </span>
@@ -440,4 +443,4 @@ export const Voices: React.FC<{ user: any }> = ({ user }) => {
   );
 };
 
-const cn = (...classes: any[]) => classes.filter(Boolean).join(' ');
+const cn = (...classes: (string | boolean | undefined | null)[]) => classes.filter(Boolean).join(' ');

@@ -4,6 +4,7 @@ import json
 import subprocess
 import os
 import shutil
+import torch
 
 # CopyCanto Python Engine Orchestrator
 # This script is called by server.ts sequentially to avoid M1 Max OOMs.
@@ -25,7 +26,8 @@ def main():
     parser.add_argument("--voicePath", required=False, default="")
     parser.add_argument("--inputUrl", required=True)
     parser.add_argument("--isAcapella", action="store_true", help="Skip stem separation")
-    parser.add_argument("--engine", default="rvc", choices=["rvc", "knn", "none"], help="Voice conversion engine: rvc, knn, or none")
+    parser.add_argument("--engine", default="rvc", choices=["rvc", "knn", "neucosvc", "amphion", "none"], help="Voice conversion engine: rvc, knn, neucosvc, amphion, or none")
+    parser.add_argument("--highQuality", action="store_true", default=True, help="Enable highest quality settings")
     args = parser.parse_args()
 
     job_id = args.jobId
@@ -75,38 +77,47 @@ def main():
                 else:
                     raise FileNotFoundError(f"Local audio file not found: {local_file_path}")
             else:
-                # Direct file path fallback
-                raw_audio_path = url
+                # Direct file path fallback - handle file:// prefix and absolute paths
+                local_path = url.replace("file://", "")
+                if os.path.exists(local_path):
+                    subprocess.run(['cp', local_path, raw_audio_path], check=True)
+                elif os.path.exists(url):
+                    subprocess.run(['cp', url, raw_audio_path], check=True)
+                else:
+                    raise FileNotFoundError(f"Local audio file not found: {url}")
             
         # Step 2: Demucs Stem Separation
         demucs_out_dir = os.path.join(songs_dir, 'stems')
+        vocals_dst = os.path.join(songs_dir, 'vocals.wav')
+        inst_dst = os.path.join(songs_dir, 'instrumental.wav')
+        bass_dst = os.path.join(songs_dir, 'bass.wav')
+        drums_dst = os.path.join(songs_dir, 'drums.wav')
+        other_dst = os.path.join(songs_dir, 'other.wav')
+
         if is_acapella:
             update_progress(job_id, 30, "Acapella mode: Skipping Stem Separation...")
-            # If acapella, the raw audio IS the vocal track
             vocal_track = raw_audio_path
             inst_track = None
+        elif os.path.exists(vocals_dst) and os.path.exists(inst_dst):
+            update_progress(job_id, 50, "Stems already exist, skipping Demucs...")
+            vocal_track = vocals_dst
+            inst_track = inst_dst
         else:
-            update_progress(job_id, 30, "Splitting Stems (Demucs v4)...")
-            # FIX: demucs is a Python module - no standalone binary on this system
-            # Use `python3 -m demucs.separate` to call it correctly
-            # Demucs is installed in system Python, NOT in the venv.
-            # Find it using shutil.which or fall back to known locations.
-            import shutil as _shutil
-            demucs_python = _shutil.which('python3') or sys.executable
-            # Prefer system Python over venv if demucs is not in venv
-            for _candidate in ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', sys.executable]:
-                if os.path.exists(_candidate):
-                    try:
-                        import subprocess as _sp
-                        _sp.run([_candidate, '-c', 'import demucs'], check=True, capture_output=True)
-                        demucs_python = _candidate
-                        break
-                    except Exception:
-                        continue
+            update_progress(job_id, 30, "Splitting Stems (Demucs htdemucs, 4-stem)...")
+            demucs_out_dir = os.path.join(songs_dir, "stems")
+            os.makedirs(demucs_out_dir, exist_ok=True)
+
+            
+            # Use the venv Python (where demucs is installed)
+            demucs_python = sys.executable
+            
+            # 4-stem htdemucs for highest quality (bass, drums, other, vocals)
+            # This gives individual stems for use in the KNN mixing step.
             try:
                 subprocess.run([
                     demucs_python, '-m', 'demucs.separate',
-                    '--two-stems=vocals',
+                    '-n', 'htdemucs',
+                    '-d', 'cpu',
                     '-o', demucs_out_dir,
                     raw_audio_path
                 ], check=True, capture_output=True)
@@ -117,23 +128,42 @@ def main():
             
             # Move stems to clean paths
             original_stem_name = os.path.splitext(os.path.basename(raw_audio_path))[0]
+            # htdemucs outputs to: <demucs_out_dir>/htdemucs/<track_name>/
             htdemucs_stem_dir = os.path.join(demucs_out_dir, 'htdemucs', original_stem_name)
             
             vocals_src = os.path.join(htdemucs_stem_dir, 'vocals.wav')
-            no_vocals_src = os.path.join(htdemucs_stem_dir, 'no_vocals.wav')
-            vocals_dst = os.path.join(songs_dir, 'vocals.wav')
-            inst_dst = os.path.join(songs_dir, 'instrumental.wav')
+            bass_src = os.path.join(htdemucs_stem_dir, 'bass.wav')
+            drums_src = os.path.join(htdemucs_stem_dir, 'drums.wav')
+            other_src = os.path.join(htdemucs_stem_dir, 'other.wav')
             
             if os.path.exists(vocals_src):
                 shutil.move(vocals_src, vocals_dst)
             else:
                 update_progress(job_id, -1, f"Demucs did not produce vocals.wav. Check: {htdemucs_stem_dir}")
                 sys.exit(1)
-            if os.path.exists(no_vocals_src):
-                shutil.move(no_vocals_src, inst_dst)
+            
+            # Move individual stems for KNN mixing
+            for stem_src, stem_dst in [(bass_src, bass_dst), (drums_src, drums_dst), (other_src, other_dst)]:
+                if os.path.exists(stem_src):
+                    shutil.move(stem_src, stem_dst)
+            
+            # Build an instrumental by mixing bass+drums+other with ffmpeg (for RVC and display)
+            available_stems = [f for f in [bass_dst, drums_dst, other_dst] if os.path.exists(f)]
+            if available_stems:
+                mix_inputs = []
+                for s in available_stems:
+                    mix_inputs += ['-i', s]
+                filter_graph = f"{''.join(f'[{i}:a]' for i in range(len(available_stems)))}amix=inputs={len(available_stems)}:duration=longest"
+                subprocess.run([
+                    'ffmpeg', '-y',
+                    *mix_inputs,
+                    '-filter_complex', filter_graph,
+                    inst_dst
+                ], check=False, capture_output=True)
             
             vocal_track = vocals_dst
             inst_track = inst_dst if os.path.exists(inst_dst) else None
+
         
         # Step 3: Voice Clone Engine (skipped if engine == 'none')
         if engine != 'none':
@@ -142,133 +172,190 @@ def main():
             refs_dir = os.path.join(project_dir, 'engines', 'refs')
             
             if engine == 'rvc':
-                rvc_dir = os.path.join(project_dir, 'engines', 'repos', 'rvc_v2')
-                env = os.environ.copy()
-                # weight_root can be clones_dir OR models_dir — rvc infer_cli uses this to find .pth
-                env['weight_root'] = clones_dir  # trained models live in storage/clones/
-                env['PYTHONPATH'] = rvc_dir
-                env['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
+                rvc_infer_script = os.path.join(project_dir, 'engines', 'rvc_infer.py')
+                rvc_dir = os.path.abspath(os.path.join(project_dir, 'engines', 'repos', 'rvc_v2'))
+                rvc_weights_dir = os.path.join(rvc_dir, 'assets', 'weights')
 
-                # Check for required model weight files
-                hubert_path = os.path.join(rvc_dir, 'assets', 'hubert', 'hubert_base.pt')
-                rmvpe_path = os.path.join(rvc_dir, 'assets', 'rmvpe', 'rmvpe.pt')
-                # Try storage/clones/ first (trained models), then engines/models/ (manually placed)
+                # Resolve voice model file — must be >1MB to be a real model.
+                # Search order: storage/clones/ → engines/models/ → rvc_v2/assets/weights/
                 model_pth = os.path.join(clones_dir, f"{args.voiceId}.pth")
-                if not os.path.exists(model_pth):
+                if not os.path.exists(model_pth) or os.path.getsize(model_pth) < 1_000_000:
                     model_pth = os.path.join(models_dir, f"{args.voiceId}.pth")
-                
+                if not os.path.exists(model_pth) or os.path.getsize(model_pth) < 1_000_000:
+                    model_pth = os.path.join(rvc_weights_dir, f"{args.voiceId}.pth")
+
+                # Verify HuBERT is installed (required for RVC)
+                hubert_path = os.path.join(rvc_dir, 'assets', 'hubert', 'hubert_base.pt')
+
                 missing = []
                 if not os.path.exists(hubert_path) or os.path.getsize(hubert_path) < 1_000_000:
-                    missing.append("HuBERT base model (assets/hubert/hubert_base.pt, ~190MB) — run: python3 engines/download_models.py")
-                if not os.path.exists(rmvpe_path) or os.path.getsize(rmvpe_path) < 1_000_000:
-                    missing.append("RMVPE pitch model (assets/rmvpe/rmvpe.pt, ~200MB) — run: python3 engines/download_models.py")
-                if not os.path.exists(model_pth):
-                    missing.append(f"Voice model: {args.voiceId}.pth — place it in storage/clones/ or engines/models/")
-                
+                    missing.append("HuBERT model (assets/hubert/hubert_base.pt, ~190MB)")
+                if not os.path.exists(model_pth) or os.path.getsize(model_pth) < 1_000_000:
+                    missing.append(f"Voice model: {args.voiceId}.pth (must be >1MB — not found in clones/, models/, or rvc_v2/assets/weights/)")
                 if missing:
                     update_progress(job_id, -1, f"Missing model files: {'; '.join(missing)}")
                     sys.exit(1)
 
-                update_progress(job_id, 65, f"RVC Inference (Voice: {args.voiceId})")
-                # Prefer MPS for inference on Apple Silicon, fallback cpu
                 import platform
-                rvc_device = 'mps' if platform.system() == 'Darwin' else 'cpu'
-                # Resolve FAISS index path — optional, inference works without it
-                index_path = os.path.join(clones_dir, f"{args.voiceId}.index")
-                if not os.path.exists(index_path):
-                    index_path = os.path.join(models_dir, f"{args.voiceId}.index")
-                if not os.path.exists(index_path):
-                    index_path = ''  # run without index (less precise but functional)
+                rvc_device = 'cpu' if platform.system() == 'Darwin' else 'cuda' if torch.cuda.is_available() else 'cpu'
+
+                # Use 'pm' on macOS (rmvpe causes segfaults on M-series), 'rmvpe' elsewhere
+                f0_method = 'pm' if platform.system() == 'Darwin' else 'rmvpe'
+
+                update_progress(job_id, 65, f"RVC Inference (Voice: {args.voiceId}, method: {f0_method})")
+
+                # Resolve FAISS index — search same directories as model
+                # CRITICAL: Disabled on macOS to prevent segmentation faults (M1/M2/M3)
+                index_path = ''
+                if platform.system() != 'Darwin':
+                    for idx_dir in [clones_dir, models_dir, rvc_weights_dir]:
+                        candidate = os.path.join(idx_dir, f"{args.voiceId}.index")
+                        if os.path.exists(candidate):
+                            index_path = candidate
+                            break
+
+                print(f"DEBUG RVC: model={model_pth} ({os.path.getsize(model_pth)//1024//1024}MB), device={rvc_device}, f0={f0_method}")
+
+                # Build command calling our clean rvc_infer.py wrapper
+                # (which correctly sets env vars BEFORE importing RVC modules)
                 infer_cmd = [
-                    sys.executable, 'tools/infer_cli.py',
-                    '--f0up_key', '0',
-                    '--f0method', 'rmvpe',
+                    sys.executable,
+                    rvc_infer_script,
+                    '--model_path', os.path.abspath(model_pth),
+                    '--input_path', os.path.abspath(vocal_track),
+                    '--output_path', os.path.abspath(converted_output),
+                    '--f0_method', f0_method,
+                    '--f0_key', '0',
+                    '--index_rate', '0.75',
+                    '--filter_radius', '3',
+                    '--rms_mix_rate', '0.25',
+                    '--protect', '0.33',
                     '--device', rvc_device,
-                    '--input_path', vocal_track,
-                    '--opt_path', converted_output,
-                    '--model_name', f"{args.voiceId}.pth",
                 ]
                 if index_path:
-                    infer_cmd += ['--index_path', index_path]
-                subprocess.run(infer_cmd, check=False, cwd=rvc_dir, env=env)
-                
-            elif engine == 'knn':
-                knn_dir = os.path.join(project_dir, 'engines', 'repos', 'knn-svc')
-                # hifigan/ dir contains mix_g_00898000_harm_no_amp.pt (SmoothKen DDSP checkpoint)
-                knn_hifigan_ckpt_dir = os.path.join(knn_dir, 'hifigan')
-                
-                # Correct ref_audio path - use voicePath from args if available
-                ref_audio = args.voicePath
-                if not ref_audio or not os.path.exists(ref_audio):
-                    update_progress(job_id, -1, f"kNN-SVC reference audio missing or invalid: {ref_audio}")
-                    sys.exit(1)
-                
-                # kNN-SVC requires 16kHz mono WAV for reference
-                ref_wav = os.path.join(songs_dir, "ref_voice_16k.wav")
-                try:
-                    subprocess.run([
-                        'ffmpeg', '-y', '-i', ref_audio,
-                        '-ar', '16000', '-ac', '1', ref_wav
-                    ], check=True, capture_output=True)
-                except Exception as e:
-                    update_progress(job_id, -1, f"Failed to convert reference audio for kNN: {str(e)}")
-                    sys.exit(1)
+                    infer_cmd += ['--index_path', os.path.abspath(index_path)]
 
-                update_progress(job_id, 65, "kNN-SVC: Converting vocals with Nearest Neighbors...")
-                
-                # ddsp_inference.py outputs next to the source file as:
-                # <src_basename>_to_<ref_basename>_knn_<ckpt_type>_<post_opt>.wav
-                # We use --ckpt_type mix and --device cpu (MPS lacks float64 support)
-                try:
-                    subprocess.run([
-                        sys.executable, 'ddsp_inference.py',
-                        vocal_track, ref_wav,
-                        '--ckpt_dir', knn_hifigan_ckpt_dir,
-                        '--ckpt_type', 'mix',
-                        '--device', 'cpu',
-                        '--topk', '4',
-                        '--prioritize_f0', 'true',
-                        '--tgt_loudness_db', '-16',
-                        '--post_opt', 'no_post_opt',
-                    ], check=True, cwd=knn_dir, capture_output=True)
-                except subprocess.CalledProcessError as e:
-                    err_msg = e.stderr.decode('utf-8') if e.stderr else str(e)
-                    update_progress(job_id, -1, f"kNN-SVC inference failed: {err_msg[:500]}")
-                    sys.exit(1)
-                
-                # Output is placed next to the source file with predictable name
-                src_stem = os.path.splitext(os.path.basename(vocal_track))[0]
-                ref_stem = os.path.splitext(os.path.basename(ref_wav))[0]
-                expected_out = os.path.join(
-                    os.path.dirname(vocal_track),
-                    f"{src_stem}_to_{ref_stem}_knn_mix_no_post_opt.wav"
+                print(f"DEBUG RVC: model={model_pth} ({os.path.getsize(model_pth)//1024//1024}MB), device={rvc_device}")
+                result = subprocess.run(
+                    infer_cmd,
+                    check=True, # Raise exception on failure
+                    cwd=project_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=1200, # Increased timeout to 20 min for CPU stability
                 )
+                print(f"RVC Success: {result.stdout.strip()[-300:]}")
                 
-                if os.path.exists(expected_out):
-                    shutil.move(expected_out, converted_output)
-                else:
-                    # Fallback: scan for any newly created wav
-                    vocal_dir = os.path.dirname(vocal_track) or "."
-                    wavs = sorted([f for f in os.listdir(vocal_dir) if f.endswith('.wav')],
-                                   key=lambda f: os.path.getmtime(os.path.join(vocal_dir, f)),
-                                   reverse=True)
-                    if wavs:
-                        shutil.move(os.path.join(vocal_dir, wavs[0]), converted_output)
-                    else:
-                        update_progress(job_id, 70, "kNN output not detected, using fallback...")
+            elif engine in ['knn', 'neucosvc', 'amphion']:
+                if engine == 'knn':
+                    infer_script = os.path.join(project_dir, 'engines', 'knnvc_infer.py')
+                elif engine == 'neucosvc':
+                    infer_script = os.path.join(project_dir, 'engines', 'neucosvc_infer.py')
+                elif engine == 'amphion':
+                    infer_script = os.path.join(project_dir, 'engines', 'amphion_infer.py')
+                
+                # Resolve reference source: prefer a directory of audio files for reference pooling.
+                # If voicePath points to a single file, check if its parent directory has more audio.
+                ref_source = args.voicePath  # single file passed from server.ts
+                
+                if not ref_source or not os.path.exists(ref_source):
+                    # Try to find audio directory by voiceId under storage/voices/
+                    possible_dirs = [
+                        os.path.join(project_dir, 'storage', 'voices', args.voiceId),
+                        os.path.join(project_dir, 'storage', 'voices'),
+                    ]
+                    for d in possible_dirs:
+                        if os.path.isdir(d):
+                            ref_source = d
+                            break
+                
+                if not ref_source or not (os.path.exists(ref_source)):
+                    update_progress(job_id, -1, f"{engine.upper()}: Reference audio missing. voicePath='{args.voicePath}', voiceId='{args.voiceId}'")
+                    sys.exit(1)
+                
+                # If voicePath is a file, check if parent dir has additional reference files
+                # (enables reference pooling for better quality).
+                if os.path.isfile(ref_source):
+                    parent_dir = os.path.dirname(ref_source)
+                    audio_exts = {'.wav', '.mp3', '.flac'}
+                    siblings = [f for f in os.listdir(parent_dir)
+                                if os.path.splitext(f)[1].lower() in audio_exts]
+                    if len(siblings) > 1:
+                        # Multiple audio files in the same directory — use the directory for pooling
+                        ref_source = parent_dir
+                
+                update_progress(job_id, 65, f"{engine.upper()}: Converting vocals...")
+                
+                try:
+                    cmd_args = [
+                        sys.executable,
+                        infer_script,
+                        os.path.abspath(vocal_track),
+                        os.path.abspath(ref_source),
+                        os.path.abspath(converted_output),
+                    ]
+                    if engine == 'knn':
+                        cmd_args += ['--topk', '4']
 
-            # Fallback if conversion failed or model was missing
+                    infer_result = subprocess.run(cmd_args, check=True, capture_output=True, text=True, timeout=2400)
+                    print(f"{engine.upper()} stdout: {infer_result.stdout[-500:]}")
+                except subprocess.CalledProcessError as e:
+                    err = (e.stderr or e.stdout or str(e))[-600:]
+                    update_progress(job_id, -1, f"{engine.upper()} inference failed: {err}")
+                    sys.exit(1)
+
+
+            # Strict validation: If conversion was requested but output doesn't exist, fail loud 
             if not os.path.exists(converted_output):
-                update_progress(job_id, 80, "Conversion model unavailable, copying original vocals as fallback...")
-                shutil.copy2(vocal_track, converted_output)
+                if engine in ['rvc', 'knn', 'neucosvc', 'amphion']:
+                    update_progress(job_id, -1, f"Voice conversion failed: {engine} output was not created ({converted_output})")
+                    sys.exit(1)
+                else:
+                    update_progress(job_id, 80, "No conversion model specified, using original vocals...")
+                    shutil.copy2(vocal_track, converted_output)
 
             # Step 4: Mix / Combine with FFmpeg
+            cover_name = f"{job_id}_cover"
             final_output = os.path.join(covers_dir, f"{job_id}.mp3")
             if is_acapella or inst_track is None or not os.path.exists(inst_track):
                 update_progress(job_id, 90, "Encoding final cover (no instrumental mix)...")
                 subprocess.run([
                     'ffmpeg', '-y',
                     '-i', converted_output,
+                    '-ar', '44100', '-ac', '2', '-q:a', '0',
+                    final_output
+                ], check=False, capture_output=True)
+            elif engine in ['knn', 'neucosvc', 'amphion']:
+                # KNN: mix swapped vocals (16kHz mono) with individual stems for max quality
+                update_progress(job_id, 90, "KNN: Mixing swapped vocals with individual stems...")
+                background_stems = [s for s in [bass_dst, drums_dst, other_dst] if os.path.exists(s)]
+                
+                if not background_stems:
+                    # Fallback: mix with combined instrumental
+                    background_stems = [inst_track]
+                
+                # Build ffmpeg inputs and filter
+                inputs = ['-i', converted_output]  # Input 0: converted vocals (16kHz mono)
+                for s in background_stems:
+                    inputs += ['-i', s]
+                
+                n_bg = len(background_stems)
+                # Upsample vocals to 44100Hz, spread to stereo, volume +3dB
+                filter_parts = ['[0:a]aresample=44100,aformat=channel_layouts=stereo,volume=1.3[v]']
+                for i, _ in enumerate(background_stems):
+                    filter_parts.append(f'[{i+1}:a]aresample=44100[bg{i}]')
+                
+                bg_labels = ''.join(f'[bg{i}]' for i in range(n_bg))
+                filter_parts.append(f'{bg_labels}amix=inputs={n_bg}:duration=longest[bgmix]')
+                filter_parts.append('[v][bgmix]amix=inputs=2:duration=longest:weights=1 0.85')
+                
+                subprocess.run([
+                    'ffmpeg', '-y',
+                    *inputs,
+                    '-filter_complex', ';'.join(filter_parts),
+                    '-q:a', '0',
+                    '-id3v2_version', '3',
+                    '-metadata', f'title={cover_name}',
                     final_output
                 ], check=False, capture_output=True)
             else:
@@ -276,16 +363,21 @@ def main():
                 subprocess.run([
                     'ffmpeg', '-y',
                     '-i', converted_output, '-i', inst_track,
-                    '-filter_complex', 'amix=inputs=2:duration=longest',
-                    final_output
+                        '-filter_complex', '[0:a]aresample=44100,pan=stereo|c0=c0|c1=c0[v];[1:a]aresample=44100[i];[v][i]amix=inputs=2:duration=longest:dropout_transition=0',
+                        '-q:a', '0',
+                        '-id3v2_version', '3',
+                        '-metadata', f"title={cover_name}",
+                        final_output
                 ], check=False, capture_output=True)
+
         
         update_progress(job_id, 100, "Completed!")
         
     except subprocess.CalledProcessError as e:
         err_bytes = e.stderr if e.stderr else (e.stdout if e.stdout else b'')
         err_msg = err_bytes.decode('utf-8') if isinstance(err_bytes, bytes) else str(err_bytes)
-        update_progress(job_id, -1, f"Process Failed: {err_msg[-500:]}")
+        display_err = err_msg if len(err_msg) < 1000 else f"{err_msg[:500]} ... {err_msg[-500:]}"
+        update_progress(job_id, -1, f"Process Failed: {display_err}")
         sys.exit(1)
     except Exception as e:
         update_progress(job_id, -1, f"Error: {str(e)}")

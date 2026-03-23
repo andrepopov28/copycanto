@@ -35,9 +35,10 @@ SECTION 3: APPLICATION STRUCTURE & NAVIGATION
 3.1 — Complete Navigation Hierarchy
 TOP BAR (Glassmorphic):
 ├── [Home] — / — Primary Dashboard
-├── [Voice Library] — /voices — Managed Clones
-├── [Song Library] — /songs — Original Stems (Vocals/Instrumental)
-├── [Cover Library] — /covers — Final AI Generated Covers
+├── [Voice Library] — /voices — Raw Vocal Samples (for Inputs)
+├── [Clone Library] — /clones — Trained AI Models & Previews
+├── [Song Library] — /songs — Raw Tracks & Stems
+├── [Cover Library] — /covers — Final AI Generated Outputs
 └── [Settings] — /settings — App Config & Local Paths
 
 3.2 — Screen Registry
@@ -49,8 +50,9 @@ TOP BAR (Glassmorphic):
 | SCR-004 | Wizard: Source | /create/source | Wizard | Local |
 | SCR-005 | Wizard: Process | /create/processing | Wizard | Local |
 | SCR-006 | Voice Library | /voices | Top Bar | Local |
-| SCR-007 | Song Library | /songs | Top Bar | Local |
-| SCR-008 | Cover Library | /covers | Top Bar | Local |
+| SCR-007 | Clone Library | /clones | Top Bar | Local |
+| SCR-008 | Song Library | /songs | Top Bar | Local |
+| SCR-009 | Cover Library | /covers | Top Bar | Local |
 
 SECTION 4: ENTITY LIFECYCLE STATE MACHINES
 ENTITY: Processing Job
@@ -171,7 +173,7 @@ Instead of cloud-based Gemini orchestration, CopyCanto uses a local LLM via Olla
 
 9.3 — Antigravity Handoff Protocol
 To ensure seamless takeover by Antigravity, the following architectural standards are maintained:
-- Firebase as Source of Truth: All job states, metadata, and user preferences are synced via Firestore.
+- Parquet as Source of Truth: All job states, metadata, and user preferences are synced via local Parquet files in `storage/db/`.
 - Sequential Mutex: Backend logic ensures only one heavy GPU/MPS task runs at a time to prevent OOM.
 - Standardized File Paths: All assets are stored in a predictable `/assets/{type}/{id}` structure.
 - API-First Design: The frontend communicates exclusively via the documented REST API, allowing the backend to be swapped or scaled independently.

@@ -26,7 +26,7 @@ CopyCanto is a local-first AI voice cover generation platform. It allows users t
 
 ## 5. Security & Privacy
 - **Local-First**: Complete data sovereignty. No audio or generated covers are sent to external APIs (except for downloading YouTube audio and fetching model metadata if configured).
-- **Environment Security**: Sensitive API keys (GitHub, Gemini, etc.) must NEVER be hardcoded. They are managed via `.env` files (ignored by git).
+- **Environment Security**: Sensitive API keys (GitHub, Gemini, Firebase, etc.) must NEVER be hardcoded. They are managed via `.env` files and `firebase-applet-config.json` (both ignored by git).
 - **File System Limits**: Multer configured for safe memory storage during uploads before flushing to disk.
 - **Diagnostic Hygiene**: Diagnostic scripts that log environment variable metadata (e.g., `check_env_keys.ts`) are prohibited and must be removed after use.
 

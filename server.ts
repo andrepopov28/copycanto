@@ -234,11 +234,11 @@ async function processQueue() {
       return;
     }
     
-    const { userId, voiceId, youtubeUrl, audioUrl, isAcapella, engine } = jobData;
+    const { userId, voiceId, youtubeUrl, audioUrl, isAcapella, engine, highQuality } = jobData;
 
     // Resolve voiceId (Check if it refers to a Clone or a direct Voice upload)
     let resolvedVoiceId = voiceId;
-    let resolvedVoicePath = ""; // To be passed to kNN-SVC reference
+    let resolvedVoicePath = ""; // To be passed to kNN-VC reference
 
     const cloneData = await dbInvoke("get", "clones", voiceId);
     if (cloneData) {
@@ -247,9 +247,22 @@ async function processQueue() {
     } else {
       const voiceData = await dbInvoke("get", "voices", voiceId);
       if (voiceData) {
-        resolvedVoicePath = path.join(process.cwd(), 'storage', voiceData.audioUrl.replace('/assets/', ''));
+        const singleAudioPath = path.join(process.cwd(), 'storage', voiceData.audioUrl.replace('/assets/', ''));
+        resolvedVoicePath = singleAudioPath;
       }
     }
+
+    // For zero-shot engines (KNN, NeuCoSVC, Amphion): prefer a directory of reference audio for higher quality pooled matching.
+    // Check if there is a dedicated folder named after the voiceId under storage/voices/.
+    const resolvedEngine = engine === 'superman' ? 'rvc' : (engine || 'rvc');
+    if (['knn', 'neucosvc', 'amphion'].includes(resolvedEngine)) {
+      const voiceDirPath = path.join(process.cwd(), 'storage', 'voices', resolvedVoiceId);
+      const { existsSync } = await import('fs');
+      if (existsSync(voiceDirPath)) {
+        resolvedVoicePath = voiceDirPath;
+      }
+    }
+
 
     // 2. Trigger Python Engine (Asynchronous)
     await dbInvoke("upsert", "jobs", jobId, {
@@ -269,7 +282,7 @@ async function processQueue() {
       '--userId', userId,
       '--voiceId', resolvedVoiceId,
       '--inputUrl', youtubeUrl || audioUrl || '',
-      '--engine', engine || 'rvc'
+      '--engine', resolvedEngine
     ];
     
     if (resolvedVoicePath) {
@@ -278,6 +291,10 @@ async function processQueue() {
     
     if (isAcapella) {
       pythonArgs.push('--isAcapella');
+    }
+    
+    if (highQuality) {
+      pythonArgs.push('--highQuality');
     }
     const pythonPath = path.join(process.cwd(), 'venv', 'bin', 'python');
     const pythonProcess = spawn(pythonPath, pythonArgs);
@@ -585,7 +602,18 @@ app.get('/api/jobs/:id', async (req, res) => {
 });
 
 app.post('/api/covers/create', async (req, res) => {
-  const { userId, youtubeUrl, audioUrl, voiceId, title, artist } = req.body;
+  const { 
+    userId, 
+    youtubeUrl, 
+    audioUrl, 
+    voiceId, 
+    title, 
+    artist, 
+    engine, 
+    pitch, 
+    isAcapella, 
+    highQuality 
+  } = req.body;
   const jobId = uuidv4();
 
   try {
@@ -603,8 +631,10 @@ app.post('/api/covers/create', async (req, res) => {
       audioUrl: audioUrl || "",
       title: title || "",
       artist: artist || "",
-      engine: req.body.engine || 'rvc',
-      isAcapella: req.body.isAcapella || false,
+      engine: engine || 'rvc',
+      pitch: pitch || 0, // Default pitch to 0 if not provided
+      isAcapella: isAcapella || false,
+      highQuality: highQuality || false, // Default highQuality to false if not provided
       createdAt: new Date().toISOString()
     });
 

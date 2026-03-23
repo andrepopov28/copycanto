@@ -40,11 +40,12 @@ npm run dev
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and fill in optionals:
+Copy `.env.example` to `.env` and fill in any required keys. **IMPORTANT**: `.env` is ignored by Git to prevent accidental leakage of sensitive keys. Never commit your `.env` file or hardcode keys in the source.
 
 | Variable | Description |
 |---|---|
 | `GITHUB_TOKEN` | Optional — for GitHub Repos browser |
+| `GEMINI_API_KEY` | Optional — for AI-assisted features |
 | `MOCK_ENGINE` | Set to `true` to use simulated pipeline (no AI) |
 
 ## Storage Layout

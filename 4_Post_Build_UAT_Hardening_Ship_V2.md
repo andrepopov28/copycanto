@@ -500,6 +500,7 @@ For each AI feature, test with:
 **7.1 — Security Readiness**
 ```
 - [ ] No secrets hardcoded in source (API keys, passwords, tokens)
+- [ ] No diagnostic scripts that log environment metadata (e.g., `check_env_keys.ts`)
 - [ ] Security rules restrictive (not default allow-all)
 - [ ] All user inputs validated server-side
 - [ ] No debug endpoints exposed

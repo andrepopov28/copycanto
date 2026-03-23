@@ -63,13 +63,14 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
   }, []);
   
   // Selection State
-  const [engine, setEngine] = useState<'rvc' | 'knn'>('rvc');
+  const [engine, setEngine] = useState<'superman' | 'knn'>('superman');
   const [selectedVoice, setSelectedVoice] = useState<Voice | null>(null);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [isAcapella, setIsAcapella] = useState(false);
   const [pitch, setPitch] = useState(0);
   const [coverTitle, setCoverTitle] = useState('');
+  const [highQuality, setHighQuality] = useState(true);
   
   // Data State
   const [voices, setVoices] = useState<Voice[]>([]);
@@ -81,7 +82,11 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
 
     // Fetch Voices
     const voicesUnsub = onSnapshot(
-      query(collection(db, "voices"), where("creatorId", "==", user.uid)),
+      query(
+        collection(db, "voices"), 
+        where("creatorId", "==", user.uid),
+        where("archived", "==", false)
+      ),
       (snap) => setVoices(snap.docs.map(d => ({ id: d.id, ...d.data() } as Voice)))
     );
 
@@ -147,6 +152,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
           engine,
           pitch,
           isAcapella,
+          highQuality,
         })
       });
 
@@ -182,7 +188,8 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
           id: 'yt-temp',
           title: data.song_title || 'Unknown Song',
           artist: data.artist || 'Unknown Artist',
-          thumbnail: 'https://picsum.photos/seed/yt/200'
+          thumbnail: 'https://picsum.photos/seed/yt/200',
+          audioUrl: '' // Fix missing property lint error
         });
       }
     } catch (e) {
@@ -196,20 +203,20 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <button 
-              onClick={() => setEngine('rvc')}
+              onClick={() => setEngine('superman')}
               className={cn(
                 "glass p-8 rounded-[40px] text-left space-y-4 border-2 transition-all apple-hover",
-                engine === 'rvc' ? "border-brand-primary bg-brand-primary/5" : "border-transparent"
+                engine === 'superman' ? "border-brand-primary bg-brand-primary/5" : "border-transparent"
               )}
             >
               <div className="w-16 h-16 rounded-2xl bg-brand-primary/10 flex items-center justify-center">
                 <Cpu className="w-8 h-8 text-brand-primary" />
               </div>
               <div className="space-y-2">
-                <h3 className="text-xl font-bold">RVC v2 Engine</h3>
+                <h3 className="text-xl font-bold">Superman Engine</h3>
                 <p className="text-sm text-text-muted">High-fidelity retrieval-based voice conversion. Best for professional singing.</p>
               </div>
-              {engine === 'rvc' && <Check className="w-6 h-6 text-brand-primary" />}
+              {engine === 'superman' && <Check className="w-6 h-6 text-brand-primary" />}
             </button>
 
             <button 
@@ -364,6 +371,18 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
                   <span className="text-text-muted">Engine:</span>
                   <span className="font-bold uppercase">{engine}</span>
                 </div>
+              </div>
+
+              {/* High Quality Toggle */}
+              <div className="pt-6 border-t border-glass-border flex items-center justify-between">
+                <div className="space-y-1">
+                  <h3 className="font-bold text-sm">High Fidelity Mode</h3>
+                  <p className="text-[10px] text-text-muted">Enforces maximum VBR quality and 44.1kHz resampling.</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" checked={highQuality} onChange={(e) => setHighQuality(e.target.checked)} className="sr-only peer" />
+                  <div className="w-11 h-6 bg-glass-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-primary"></div>
+                </label>
               </div>
             </div>
           </div>

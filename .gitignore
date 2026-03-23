@@ -17,7 +17,10 @@ engines/repos/
 engines/models/
 
 # Local App Data
+firebase-applet-config.json
 storage/
+separated/
+voices_head.json
 !storage/db/.keep
 !storage/songs/.keep
 !storage/voices/.keep

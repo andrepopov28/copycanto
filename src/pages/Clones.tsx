@@ -21,7 +21,8 @@ import {
   doc,
   updateDoc,
   handleFirestoreError,
-  OperationType
+  OperationType,
+  User
 } from '../db';
 import { HeroSection } from '../components/HeroSection';
 import { cn } from '../lib/utils';
@@ -35,10 +36,12 @@ interface Clone {
   voiceId: string;
   engine: string;
   userId: string;
-  createdAt: any;
+  createdAt: string;
+  avatar?: string;
+  name?: string;
 }
 
-export const Clones: React.FC<{ user: any }> = ({ user }) => {
+export const Clones = ({ user }: { user: User | null }) => {
   const [clones, setClones] = useState<Clone[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,15 +54,14 @@ export const Clones: React.FC<{ user: any }> = ({ user }) => {
 
     const clonesQuery = query(
       collection(db, "clones"),
-      where("userId", "==", user.uid),
       orderBy("createdAt", "desc")
     );
 
-    const unsubscribe = onSnapshot(clonesQuery, (snapshot) => {
-      const clonesData = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Clone));
-      setClones(clonesData);
+    const unsubscribe = onSnapshot(clonesQuery, (snapshot: any) => {
+      const clonesData = snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() } as Clone));
+      setClones(clonesData || []);
       setLoading(false);
-    }, (err) => {
+    }, (err: any) => {
       handleFirestoreError(err, OperationType.LIST, "clones");
       setLoading(false);
     });
@@ -88,7 +90,7 @@ export const Clones: React.FC<{ user: any }> = ({ user }) => {
   };
 
   const filteredClones = clones.filter(c => 
-    c.title.toLowerCase().includes(searchTerm.toLowerCase())
+    (c.title || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -99,6 +101,7 @@ export const Clones: React.FC<{ user: any }> = ({ user }) => {
     >
       <HeroSection 
         title="Clone Library"
+        subtitle="Manage your custom trained voice models and clones."
         imageSrc="/assets/pink_panther_dj_hero.png"
         badge="Isolated Vocals"
       />
@@ -141,8 +144,8 @@ export const Clones: React.FC<{ user: any }> = ({ user }) => {
               {/* Thumbnail */}
               <div className="relative aspect-video">
                 <img 
-                  src={clone.thumbnail || `/assets/pink_panther_dj_hero.png`}
-                  alt={clone.title} 
+                  src={clone.thumbnail || clone.avatar || `/assets/monkey_avatar_1774000814815.png`}
+                  alt={clone.title || clone.name || 'Untitled Clone'} 
                   className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-110"
                   referrerPolicy="no-referrer"
                 />

@@ -40,24 +40,24 @@ npm run dev
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and fill in any required keys. **IMPORTANT**: `.env` is ignored by Git to prevent accidental leakage of sensitive keys. Never commit your `.env` file or hardcode keys in the source.
+Copy `.env.example` to `.env` and fill in any required keys. Also, copy `firebase-applet-config.json.example` to `firebase-applet-config.json` and provide your Firebase project details.
+**IMPORTANT**: Both `.env` and `firebase-applet-config.json` are ignored by Git to prevent accidental leakage of sensitive keys. Never commit these files or hardcode keys in the source.
 
 | Variable | Description |
 |---|---|
 | `GITHUB_TOKEN` | Optional — for GitHub Repos browser |
 | `GEMINI_API_KEY` | Optional — for AI-assisted features |
+| `UAT_TEST_PASSWORD` | Optional — for authentication UAT scripts |
 | `MOCK_ENGINE` | Set to `true` to use simulated pipeline (no AI) |
 
-## Storage Layout
+## Storage Layout & Data Libraries
 
-```
-storage/
-  songs/       ← source audio per job
-  voices/      ← uploaded voice samples
-  clones/      ← converted isolated vocals
-  covers/      ← final mixed outputs
-  db/          ← Parquet flat-file database
-```
+The files and their Parquet database records (inside `storage/db/`) strictly map to the following categories:
+
+- **voices (`storage/voices/` & `voices.parquet`)**: Raw vocals (e.g., source audio recordings used as inputs for cloning).
+- **clones (`storage/clones/` & `clones.parquet`)**: Trained cloned vocals (e.g., `.pth` models, `.index` files, avatar images, and preview samples).
+- **songs (`storage/songs/` & `songs.parquet`)**: Raw songs (e.g., the original tracks to be converted, intermediate stems, instrumentals).
+- **covers (`storage/covers/` & `covers.parquet`)**: New songs that went through the engines and had their voices swapped (final `.mp3` or `.wav` output covers).
 
 ## AI Pipeline
 

@@ -63,7 +63,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
   }, []);
   
   // Selection State
-  const [engine, setEngine] = useState<'superman' | 'knn'>('superman');
+  const [engine, setEngine] = useState<'superman' | 'knn' | 'neucosvc' | 'amphion'>('superman');
   const [selectedVoice, setSelectedVoice] = useState<Voice | null>(null);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -235,6 +235,40 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
               </div>
               {engine === 'knn' && <Check className="w-6 h-6 text-brand-secondary" />}
             </button>
+            
+            <button 
+              onClick={() => setEngine('neucosvc')}
+              className={cn(
+                "glass p-8 rounded-[40px] text-left space-y-4 border-2 transition-all apple-hover",
+                engine === 'neucosvc' ? "border-brand-accent bg-brand-accent/5" : "border-transparent"
+              )}
+            >
+              <div className="w-16 h-16 rounded-2xl bg-brand-accent/10 flex items-center justify-center">
+                <Sparkles className="w-8 h-8 text-brand-accent" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold">NeuCoSVC Engine</h3>
+                <p className="text-sm text-text-muted">High-fidelity any-to-any zero shot singing voice conversion.</p>
+              </div>
+              {engine === 'neucosvc' && <Check className="w-6 h-6 text-brand-accent" />}
+            </button>
+
+            <button 
+              onClick={() => setEngine('amphion')}
+              className={cn(
+                "glass p-8 rounded-[40px] text-left space-y-4 border-2 transition-all apple-hover",
+                engine === 'amphion' ? "border-amber-400 bg-amber-400/5" : "border-transparent"
+              )}
+            >
+              <div className="w-16 h-16 rounded-2xl bg-amber-400/10 flex items-center justify-center">
+                <Mic2 className="w-8 h-8 text-amber-400" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold">Amphion Engine</h3>
+                <p className="text-sm text-text-muted">Advanced open-source audio foundation model using flow matching.</p>
+              </div>
+              {engine === 'amphion' && <Check className="w-6 h-6 text-amber-400" />}
+            </button>
           </div>
         );
 
@@ -405,7 +439,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
       <HeroSection 
         title="Start New Cover"
         subtitle="Transform any song with your custom AI voice clones in 4 simple steps."
-        imageSeed="musician-panda"
+        imageSrc="/assets/pink_panther_dj_hero.png"
         badge="AI Creation Pipeline"
       />
 

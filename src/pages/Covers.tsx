@@ -62,8 +62,8 @@ export const Covers: React.FC<{ user: any }> = ({ user }) => {
       orderBy("createdAt", "desc")
     );
 
-    const unsubscribe = onSnapshot(coversQuery, (snapshot) => {
-      const coversData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cover));
+    const unsubscribe = onSnapshot(coversQuery, (snapshot: any) => {
+      const coversData = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Cover));
       setCovers(coversData);
       setLoading(false);
     }, (err) => {
@@ -95,7 +95,7 @@ export const Covers: React.FC<{ user: any }> = ({ user }) => {
   };
 
   const filteredCovers = covers.filter(c => 
-    c.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (c.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (c.voiceName ?? '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -107,6 +107,7 @@ export const Covers: React.FC<{ user: any }> = ({ user }) => {
     >
       <HeroSection 
         title="Cover Library"
+        subtitle="View and manage all your generated AI covers."
         imageSrc="/assets/bugs_bunny_hero_1773997735825.png"
         badge="AI Cover Suite"
       >

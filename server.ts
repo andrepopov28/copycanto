@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
+import helmet from "helmet";
 import { v4 as uuidv4 } from "uuid";
 import multer from "multer";
 import { exec, spawn } from "child_process";
@@ -62,9 +63,34 @@ const app = express();
 // CopyCanto dedicated port — non-standard to avoid conflicts with other dev apps
 // Access the app at: http://localhost:7842
 const PORT = 7842;
+const SYSTEM_USER = 'local-user';
 
-app.use(cors());
-app.use(express.json());
+// --- Security Middleware ---
+app.use(helmet()); // RT-D2: Add security headers (CSP, X-Frame-Options, XCTO, HSTS)
+app.use(cors({ origin: ['http://localhost:7842', 'localhost:7842'], credentials: false })); // RT-D1: Restrict CORS
+app.use(express.json({ limit: '2mb' })); // RT-C6: Set payload size limit
+
+// --- Input Validation ---
+const ALLOWED_COLLECTIONS = ['voices', 'songs', 'covers', 'clones', 'jobs'];
+const ID_SAFE_RE = /^[a-zA-Z0-9_\-]{1,64}$/;
+const VALID_ENGINES = ['rvc', 'knn', 'neucosvc', 'amphion', 'superman', 'none'];
+const ALLOWED_AUDIO_EXTS = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'];
+
+// Validate collection name (RT-B3, RT-B4)
+app.use('/api/db/:collection', (req, res, next) => {
+  if (!ALLOWED_COLLECTIONS.includes(req.params.collection)) {
+    return res.status(400).json({ error: "Invalid collection" });
+  }
+  next();
+});
+
+// Validate ID format in db routes
+app.use('/api/db/:collection/:id', (req, res, next) => {
+  if (!ID_SAFE_RE.test(req.params.id)) {
+    return res.status(400).json({ error: "Invalid id format" });
+  }
+  next();
+});
 
 // --- Multer Setup ---
 
@@ -192,6 +218,11 @@ app.post('/api/db/:collection', async (req, res) => {
   try {
     const data = req.body;
     if (!data.id) return res.status(400).json({ error: "Missing id in payload" });
+    // RT-A2: Enforce userId = system user (prevents IDOR setup)
+    if (data.userId && data.userId !== SYSTEM_USER) {
+      return res.status(403).json({ error: "userId mismatch" });
+    }
+    data.userId = SYSTEM_USER;
     await dbInvoke("upsert", req.params.collection, data.id, data);
     res.json({ success: true, id: data.id });
   } catch (error) {
@@ -204,9 +235,14 @@ app.patch('/api/db/:collection/:id', async (req, res) => {
     // Fetch existing
     const existing = await dbInvoke("get", req.params.collection, req.params.id);
     if (!existing) return res.status(404).json({ error: "Record not found" });
-    
+
+    // RT-A3: Verify ownership before update
+    if (existing.userId && existing.userId !== SYSTEM_USER) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
     // Merge
-    const updated = { ...existing, ...req.body, id: req.params.id };
+    const updated = { ...existing, ...req.body, id: req.params.id, userId: SYSTEM_USER };
     await dbInvoke("upsert", req.params.collection, req.params.id, updated);
     res.json({ success: true, id: req.params.id });
   } catch (error) {
@@ -435,9 +471,20 @@ app.post('/api/upload', upload.single('audio'), async (req, res) => {
     return res.status(400).json({ error: "No file uploaded" });
   }
 
+  // RT-E2: Validate file extension
+  const ext = path.extname(fileData.originalname).toLowerCase();
+  if (!ALLOWED_AUDIO_EXTS.includes(ext)) {
+    return res.status(400).json({ error: `File type ${ext} not allowed. Allowed types: ${ALLOWED_AUDIO_EXTS.join(', ')}` });
+  }
+
+  // RT-E3: Validate file size (minimum 100 bytes to avoid empty files)
+  if (fileData.size < 100) {
+    return res.status(400).json({ error: "File too small (minimum 100 bytes)" });
+  }
+
   const { userId } = req.body;
   const uniqueName = `${uuidv4()}_${fileData.originalname}`;
-  
+
   // Ensure user directory exists
   const userAudioDir = path.join(storagePath, 'audio', userId || 'anonymous');
   if (!fs.existsSync(userAudioDir)) {
@@ -448,7 +495,7 @@ app.post('/api/upload', upload.single('audio'), async (req, res) => {
 
   try {
     fs.writeFileSync(filePath, fileData.buffer);
-    
+
     // The relative URL for the frontend to access via proxy
     const url = `/assets/audio/${userId || 'anonymous'}/${uniqueName}`;
 
@@ -468,16 +515,26 @@ app.post('/api/upload/voice', upload.fields([{ name: 'audio', maxCount: 1 }, { n
   const audioFile = files['audio'][0];
   const avatarFile = files['avatar'] ? files['avatar'][0] : null;
   const { userId, voiceName } = req.body;
-  
+
+  // RT-E2: Validate audio file extension
+  const audioExt = path.extname(audioFile.originalname).toLowerCase();
+  if (!ALLOWED_AUDIO_EXTS.includes(audioExt)) {
+    return res.status(400).json({ error: `Audio file type ${audioExt} not allowed. Allowed types: ${ALLOWED_AUDIO_EXTS.join(', ')}` });
+  }
+
+  // RT-E3: Validate audio file size
+  if (audioFile.size < 100) {
+    return res.status(400).json({ error: "Audio file too small (minimum 100 bytes)" });
+  }
+
   const voiceId = uuidv4();
-  
+
   // Ensure voice directory exists
   const userVoiceDir = path.join(storagePath, 'voices', userId || 'anonymous');
   if (!fs.existsSync(userVoiceDir)) {
     fs.mkdirSync(userVoiceDir, { recursive: true });
   }
 
-  const audioExt = path.extname(audioFile.originalname) || '.wav';
   const audioFilePath = path.join(userVoiceDir, `${voiceId}${audioExt}`);
   
   let avatarUrl = '';
@@ -602,18 +659,39 @@ app.get('/api/jobs/:id', async (req, res) => {
 });
 
 app.post('/api/covers/create', async (req, res) => {
-  const { 
-    userId, 
-    youtubeUrl, 
-    audioUrl, 
-    voiceId, 
-    title, 
-    artist, 
-    engine, 
-    pitch, 
-    isAcapella, 
-    highQuality 
+  const {
+    userId,
+    youtubeUrl,
+    audioUrl,
+    voiceId,
+    title,
+    artist,
+    engine,
+    pitch,
+    isAcapella,
+    highQuality
   } = req.body;
+
+  // RT-C5: Validate required fields
+  if (!voiceId) {
+    return res.status(400).json({ error: "voiceId is required" });
+  }
+  if (!youtubeUrl && !audioUrl) {
+    return res.status(400).json({ error: "Either youtubeUrl or audioUrl is required" });
+  }
+
+  // RT-G2: Validate engine
+  const resolvedEngine = engine === 'superman' ? 'rvc' : (engine || 'rvc');
+  if (!VALID_ENGINES.includes(resolvedEngine)) {
+    return res.status(400).json({ error: `Invalid engine. Allowed: ${VALID_ENGINES.join(', ')}` });
+  }
+
+  // RT-G1: Validate pitch range (-12 to +12)
+  const numericPitch = Number(pitch) || 0;
+  if (isNaN(numericPitch) || Math.abs(numericPitch) > 12) {
+    return res.status(400).json({ error: "Pitch must be a number between -12 and +12" });
+  }
+
   const jobId = uuidv4();
 
   try {
@@ -625,16 +703,16 @@ app.post('/api/covers/create', async (req, res) => {
       progress: 0,
       message: 'Queued for processing...',
       targetId: '',
-      userId,
+      userId: SYSTEM_USER,
       voiceId,
       youtubeUrl: youtubeUrl || "",
       audioUrl: audioUrl || "",
       title: title || "",
       artist: artist || "",
-      engine: engine || 'rvc',
-      pitch: pitch || 0, // Default pitch to 0 if not provided
+      engine: resolvedEngine,
+      pitch: numericPitch,
       isAcapella: isAcapella || false,
-      highQuality: highQuality || false, // Default highQuality to false if not provided
+      highQuality: highQuality || false,
       createdAt: new Date().toISOString()
     });
 

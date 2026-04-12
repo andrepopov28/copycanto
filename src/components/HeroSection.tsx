@@ -5,7 +5,7 @@ import { cn } from '../lib/utils';
 
 interface HeroSectionProps {
   title: React.ReactNode;
-  subtitle: string;
+  subtitle?: string;
   imageSeed?: string;
   imageSrc?: string;
   badge?: string;
@@ -13,14 +13,14 @@ interface HeroSectionProps {
   children?: React.ReactNode;
 }
 
-export const HeroSection: React.FC<HeroSectionProps> = ({ 
-  title, 
-  subtitle, 
-  imageSeed, 
+export const HeroSection: React.FC<HeroSectionProps> = ({
+  title,
+  subtitle = '',
+  imageSeed,
   imageSrc,
-  badge = "AI Voice Suite", 
+  badge = "AI Voice Suite",
   className,
-  children 
+  children
 }) => {
   const imageUrl = imageSrc || `https://loremflickr.com/1920/1080/3d,cartoon,animal,musician,${imageSeed}`;
 

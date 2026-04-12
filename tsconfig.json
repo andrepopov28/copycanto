@@ -24,5 +24,7 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": ["src", "server.ts"],
+  "exclude": ["node_modules", "dist", "engines", "venv", "scripts", "public"]
 }

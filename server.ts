@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
 import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { v4 as uuidv4 } from "uuid";
 import multer from "multer";
 import { exec, spawn } from "child_process";
@@ -73,8 +74,34 @@ app.use(express.json({ limit: '2mb' })); // RT-C6: Set payload size limit
 // --- Input Validation ---
 const ALLOWED_COLLECTIONS = ['voices', 'songs', 'covers', 'clones', 'jobs'];
 const ID_SAFE_RE = /^[a-zA-Z0-9_\-]{1,64}$/;
-const VALID_ENGINES = ['rvc', 'knn', 'neucosvc', 'amphion', 'superman', 'none'];
+const VALID_ENGINES = ['rvc', 'knn', 'neucosvc', 'amphion', 'none'];
 const ALLOWED_AUDIO_EXTS = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'];
+
+// RT-F1: Rate limiters — prevent DoS via unlimited job/upload queuing
+const coverCreateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: 'Too many job requests. Please wait before submitting another.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { error: 'Too many uploads. Please wait.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// RT-F2: Safe storage path helper — prevents path traversal via DB-sourced audioUrl values
+function safeStoragePath(assetUrl: string): string {
+  const rel = path.normalize(assetUrl.replace('/assets/', ''));
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`Unsafe asset path rejected: ${assetUrl}`);
+  }
+  return path.join(process.cwd(), 'storage', rel);
+}
 
 // Validate collection name (RT-B3, RT-B4)
 app.use('/api/db/:collection', (req, res, next) => {
@@ -218,6 +245,8 @@ app.post('/api/db/:collection', async (req, res) => {
   try {
     const data = req.body;
     if (!data.id) return res.status(400).json({ error: "Missing id in payload" });
+    // RT-B5: Validate body id format (mirrors URL-param middleware)
+    if (!ID_SAFE_RE.test(data.id)) return res.status(400).json({ error: "Invalid id format" });
     // RT-A2: Enforce userId = system user (prevents IDOR setup)
     if (data.userId && data.userId !== SYSTEM_USER) {
       return res.status(403).json({ error: "userId mismatch" });
@@ -279,18 +308,17 @@ async function processQueue() {
     const cloneData = await dbInvoke("get", "clones", voiceId);
     if (cloneData) {
       resolvedVoiceId = cloneData.voiceId; // The underlying model ID used for RVC
-      resolvedVoicePath = path.join(process.cwd(), 'storage', cloneData.audioUrl.replace('/assets/', ''));
+      resolvedVoicePath = safeStoragePath(cloneData.audioUrl); // RT-F2: path traversal guard
     } else {
       const voiceData = await dbInvoke("get", "voices", voiceId);
       if (voiceData) {
-        const singleAudioPath = path.join(process.cwd(), 'storage', voiceData.audioUrl.replace('/assets/', ''));
-        resolvedVoicePath = singleAudioPath;
+        resolvedVoicePath = safeStoragePath(voiceData.audioUrl); // RT-F2: path traversal guard
       }
     }
 
     // For zero-shot engines (KNN, NeuCoSVC, Amphion): prefer a directory of reference audio for higher quality pooled matching.
     // Check if there is a dedicated folder named after the voiceId under storage/voices/.
-    const resolvedEngine = engine === 'superman' ? 'rvc' : (engine || 'rvc');
+    const resolvedEngine = engine || 'rvc';
     if (['knn', 'neucosvc', 'amphion'].includes(resolvedEngine)) {
       const voiceDirPath = path.join(process.cwd(), 'storage', 'voices', resolvedVoiceId);
       const { existsSync } = await import('fs');
@@ -465,7 +493,7 @@ async function processQueue() {
 const storagePath = path.join(process.cwd(), 'storage');
 app.use('/assets', express.static(storagePath));
 
-app.post('/api/upload', upload.single('audio'), async (req, res) => {
+app.post('/api/upload', uploadLimiter, upload.single('audio'), async (req, res) => {
   const fileData = (req as any).file;
   if (!fileData) {
     return res.status(400).json({ error: "No file uploaded" });
@@ -506,7 +534,7 @@ app.post('/api/upload', upload.single('audio'), async (req, res) => {
   }
 });
 
-app.post('/api/upload/voice', upload.fields([{ name: 'audio', maxCount: 1 }, { name: 'avatar', maxCount: 1 }]), async (req, res) => {
+app.post('/api/upload/voice', uploadLimiter, upload.fields([{ name: 'audio', maxCount: 1 }, { name: 'avatar', maxCount: 1 }]), async (req, res) => {
   const files = (req as any).files;
   if (!files || !files['audio']) {
     return res.status(400).json({ error: "No audio file uploaded" });
@@ -658,7 +686,7 @@ app.get('/api/jobs/:id', async (req, res) => {
   }
 });
 
-app.post('/api/covers/create', async (req, res) => {
+app.post('/api/covers/create', coverCreateLimiter, async (req, res) => {
   const {
     userId,
     youtubeUrl,
@@ -681,7 +709,7 @@ app.post('/api/covers/create', async (req, res) => {
   }
 
   // RT-G2: Validate engine
-  const resolvedEngine = engine === 'superman' ? 'rvc' : (engine || 'rvc');
+  const resolvedEngine = engine || 'rvc';
   if (!VALID_ENGINES.includes(resolvedEngine)) {
     return res.status(400).json({ error: `Invalid engine. Allowed: ${VALID_ENGINES.join(', ')}` });
   }

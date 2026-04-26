@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "copycanto-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "server.ts"],
+      "port": 7842,
+      "env": {
+        "MOCK_ENGINE": "true"
+      }
+    }
+  ]
+}

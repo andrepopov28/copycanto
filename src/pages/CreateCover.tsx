@@ -26,6 +26,7 @@ import {
 import { cn } from '../lib/utils';
 import { HeroSection } from '../components/HeroSection';
 
+
 interface Voice {
   id: string;
   name: string;
@@ -61,7 +62,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
-  
+
   // Selection State
   const [engine, setEngine] = useState<'superman' | 'knn' | 'neucosvc' | 'amphion'>('superman');
   const [selectedVoice, setSelectedVoice] = useState<Voice | null>(null);
@@ -71,7 +72,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
   const [pitch, setPitch] = useState(0);
   const [coverTitle, setCoverTitle] = useState('');
   const [highQuality, setHighQuality] = useState(true);
-  
+
   // Data State
   const [voices, setVoices] = useState<Voice[]>([]);
   const [clones, setClones] = useState<any[]>([]); // Clones can be used as voices
@@ -83,7 +84,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
     // Fetch Voices
     const voicesUnsub = onSnapshot(
       query(
-        collection(db, "voices"), 
+        collection(db, "voices"),
         where("creatorId", "==", user.uid),
         where("archived", "==", false)
       ),
@@ -136,7 +137,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
 
   const handleCreate = async () => {
     if (!selectedVoice || !user || (!selectedSong && !youtubeUrl)) return;
-    
+
     setLoading(true);
     try {
       const response = await fetch('/api/covers/create', {
@@ -170,7 +171,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
     setYoutubeUrl(url);
     setYoutubeError(null);
     if (!url.includes('youtube.com') && !url.includes('youtu.be')) return;
-    
+
     try {
       const res = await fetch('/api/extract/youtube', {
         method: 'POST',
@@ -189,11 +190,14 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
           title: data.song_title || 'Unknown Song',
           artist: data.artist || 'Unknown Artist',
           thumbnail: 'https://picsum.photos/seed/yt/200',
-          audioUrl: '' // Fix missing property lint error
+          audioUrl: data.audioUrl || ''
         });
+      } else {
+        alert('Failed to extract YouTube video. Please try again.');
       }
     } catch (e) {
       console.error(e);
+      alert('An error occurred while extracting the YouTube video.');
     }
   };
 
@@ -202,7 +206,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
       case 0: // Engine
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <button 
+            <button
               onClick={() => setEngine('superman')}
               className={cn(
                 "glass p-8 rounded-[40px] text-left space-y-4 border-2 transition-all apple-hover",
@@ -219,7 +223,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
               {engine === 'superman' && <Check className="w-6 h-6 text-brand-primary" />}
             </button>
 
-            <button 
+            <button
               onClick={() => setEngine('knn')}
               className={cn(
                 "glass p-8 rounded-[40px] text-left space-y-4 border-2 transition-all apple-hover",
@@ -235,8 +239,8 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
               </div>
               {engine === 'knn' && <Check className="w-6 h-6 text-brand-secondary" />}
             </button>
-            
-            <button 
+
+            <button
               onClick={() => setEngine('neucosvc')}
               className={cn(
                 "glass p-8 rounded-[40px] text-left space-y-4 border-2 transition-all apple-hover",
@@ -253,7 +257,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
               {engine === 'neucosvc' && <Check className="w-6 h-6 text-brand-accent" />}
             </button>
 
-            <button 
+            <button
               onClick={() => setEngine('amphion')}
               className={cn(
                 "glass p-8 rounded-[40px] text-left space-y-4 border-2 transition-all apple-hover",
@@ -276,7 +280,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
         return (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {selectableVoices.map(voice => (
-              <button 
+              <button
                 key={voice.id}
                 onClick={() => setSelectedVoice(voice as any)}
                 className={cn(
@@ -302,8 +306,8 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
           <div className="space-y-6">
             <div className="glass p-6 rounded-3xl space-y-4">
               <h3 className="font-bold">Paste a YouTube Link</h3>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="https://youtube.com/watch?v=..."
                 value={youtubeUrl}
                 onChange={(e) => handleYoutubeExtract(e.target.value)}
@@ -315,7 +319,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
                 </div>
               )}
             </div>
-            
+
             <div className="flex items-center gap-4">
               <div className="h-px bg-glass-border flex-1" />
               <span className="text-sm font-bold tracking-widest uppercase text-text-muted">OR CHOOSE EXISTING</span>
@@ -324,7 +328,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {songs.map(song => (
-                <button 
+                <button
                   key={song.id}
                   onClick={() => { setSelectedSong(song); setYoutubeUrl(''); }}
                   className={cn(
@@ -379,11 +383,11 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
               <div className="space-y-4">
                 <label className="text-sm font-bold uppercase tracking-widest text-text-muted">Pitch Adjustment (Semitones)</label>
                 <div className="flex items-center gap-4">
-                  <input 
-                    type="range" 
-                    min="-12" 
-                    max="12" 
-                    value={pitch} 
+                  <input
+                    type="range"
+                    min="-12"
+                    max="12"
+                    value={pitch}
                     onChange={(e) => setPitch(parseInt(e.target.value))}
                     className="flex-1 h-2 bg-text-main/10 rounded-full appearance-none cursor-pointer accent-brand-primary"
                   />
@@ -431,12 +435,12 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="space-y-12"
     >
-      <HeroSection 
+      <HeroSection
         title="Start New Cover"
         subtitle="Transform any song with your custom AI voice clones in 4 simple steps."
         imageSrc="/assets/pink_panther_dj_hero.png"
@@ -451,17 +455,16 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
             const Icon = step.icon;
             const isActive = currentStep === idx;
             const isCompleted = currentStep > idx;
-            
+
             return (
               <div key={step.id} className="flex flex-col items-center gap-3">
                 <div className={cn(
                   "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-500 relative",
-                  isActive ? "bg-brand-primary text-white scale-110 shadow-lg" : 
-                  isCompleted ? "bg-brand-primary/20 text-brand-primary" : "bg-bg-main border border-glass-border text-text-muted"
+                  isActive ? "bg-brand-primary text-white scale-110 shadow-lg" : isCompleted ? "bg-brand-primary/20 text-brand-primary" : "bg-bg-main border border-glass-border text-text-muted"
                 )}>
                   {isCompleted ? <Check className="w-6 h-6" /> : <Icon className="w-5 h-5" />}
                   {isActive && (
-                    <motion.div 
+                    <motion.div
                       layoutId="step-glow"
                       className="absolute inset-0 bg-brand-primary blur-xl opacity-40 rounded-2xl -z-10"
                     />
@@ -496,7 +499,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
 
       {/* Footer Controls */}
       <div className="flex items-center justify-between pt-8 border-t border-glass-border">
-        <button 
+        <button
           onClick={handleBack}
           disabled={currentStep === 0 || loading}
           className="btn-secondary flex items-center gap-2 disabled:opacity-30"
@@ -504,8 +507,8 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
           <ChevronLeft className="w-5 h-5" />
           Back
         </button>
-        
-        <button 
+
+        <button
           onClick={handleNext}
           disabled={isNextDisabled() || loading}
           className="btn-primary flex items-center gap-2 prismatic-liquid-hover disabled:opacity-50"

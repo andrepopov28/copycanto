@@ -16,7 +16,9 @@ def execute():
         covers_in_clones = clones_df.filter(is_cover)
         new_clones_df = clones_df.filter(~is_cover)
         
-        new_clones_df.write_parquet("storage/db/clones.parquet")
+        temp_path = f"storage/db/clones.parquet.tmp.{uuid.uuid4()}"
+        new_clones_df.write_parquet(temp_path)
+        os.replace(temp_path, "storage/db/clones.parquet")
         print(f"Removed {len(covers_in_clones)} cover entries from clones.parquet")
 
     # 2. Move files from storage/clones/ to storage/covers/
@@ -30,11 +32,12 @@ def execute():
         for file in os.listdir(clones_dir):
             if file.endswith(".wav") or file.endswith(".mp3"):
                 src = os.path.join(clones_dir, file)
-                dst = os.path.join(covers_dir, file)
+                safe_file = os.path.basename(file)
+                dst = os.path.join(covers_dir, safe_file)
                 if not os.path.exists(dst): 
                     shutil.move(src, dst)
-                moved_files.append(file)
-                print(f"Moved {file} from clones/ to covers/")
+                moved_files.append(safe_file)
+                print(f"Moved {safe_file} from clones/ to covers/")
 
     # 3. Move misplaced covers from storage/songs/ 
     songs_dir = "storage/songs/"
@@ -42,11 +45,12 @@ def execute():
         for file in os.listdir(songs_dir):
             if file in ["song1 - neucosvc.mp3", "song1_asdis_hq_final.mp3"]:
                 src = os.path.join(songs_dir, file)
-                dst = os.path.join(covers_dir, file)
+                safe_file = os.path.basename(file)
+                dst = os.path.join(covers_dir, safe_file)
                 if not os.path.exists(dst):
                     shutil.move(src, dst)
-                moved_files.append(file)
-                print(f"Moved {file} from songs/ to covers/")
+                moved_files.append(safe_file)
+                print(f"Moved {safe_file} from songs/ to covers/")
 
     # 4. Add moved files to covers.parquet
     if os.path.exists("storage/db/covers.parquet"):
@@ -101,7 +105,9 @@ def execute():
         final_records.append(ordered_r)
 
     new_covers_df = pl.DataFrame(final_records, schema=covers_df.schema)
-    new_covers_df.write_parquet("storage/db/covers.parquet")
+    temp_path = f"storage/db/covers.parquet.tmp.{uuid.uuid4()}"
+    new_covers_df.write_parquet(temp_path)
+    os.replace(temp_path, "storage/db/covers.parquet")
     print(f"Covers Parquet updated to {len(final_records)} records")
     
 if __name__ == "__main__":

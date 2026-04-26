@@ -12,7 +12,7 @@ asdis_entry = None
 new_clones = []
 
 for c in clones_list:
-    if (c.get('title') or '').lower() == 'asdís' or c.get('voiceId') == 'asdis':
+    if (c.get('title') or '').lower() == 'asdís'.lower() or (c.get('voiceId') or '').lower() == 'asdis'.lower():
         asdis_entry = {
             "id": "asdis",
             "name": "Asdís",

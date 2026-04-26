@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { 
-  Mic2, 
-  Plus, 
-  Search, 
-  Trash2, 
-  Play, 
+import {
+  Mic2,
+  Plus,
+  Search,
+  Trash2,
+  Play,
   Loader2,
   Sparkles,
   Cpu,
@@ -15,12 +15,12 @@ import {
   Upload,
   StopCircle
 } from 'lucide-react';
-import { 
-  db, 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
+import {
+  db,
+  collection,
+  query,
+  where,
+  onSnapshot,
   orderBy,
   deleteDoc,
   doc,
@@ -78,25 +78,29 @@ export const Voices = ({ user }: { user: User | null }) => {
   }, [isRecording]);
 
   const startRecording = async () => {
+    let stream: MediaStream | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       const chunks: Blob[] = [];
-      
+
       recorder.ondataavailable = e => chunks.push(e.data);
       recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'audio/webm' });
         const file = new File([blob], 'recording.webm', { type: 'audio/webm' });
         setNewAudioFile(file);
-        stream.getTracks().forEach(t => t.stop());
+        stream?.getTracks().forEach(t => t.stop());
       };
-      
+
       recorder.start();
       setMediaRecorder(recorder);
       setIsRecording(true);
     } catch (err) {
       console.error("Microphone access error:", err);
       alert("Could not access microphone.");
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
     }
   };
 
@@ -126,20 +130,19 @@ export const Voices = ({ user }: { user: User | null }) => {
       });
 
       if (!res.ok) throw new Error("Failed to upload voice");
-      
+
       const { voiceId, audioUrl, avatarUrl } = await res.json();
 
       await addDoc(collection(db, "voices"), {
         name: newVoiceName,
         avatar: avatarUrl,
         audioUrl: audioUrl,
-        type: 'Source Audio', // Simple reference audio for zero-shot or training
+        type: 'Source Audio',
         creatorId: user.uid,
         isPublic: false,
         createdAt: serverTimestamp()
       });
 
-      // Reset Modal
       setIsModalOpen(false);
       setNewVoiceName('');
       setNewAudioFile(null);
@@ -193,17 +196,17 @@ export const Voices = ({ user }: { user: User | null }) => {
     setEditingId(null);
   };
 
-  const filteredVoices = voices.filter(v => 
+  const filteredVoices = voices.filter(v =>
     v.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="space-y-8"
     >
-      <HeroSection 
+      <HeroSection
         title="Voice Library"
         subtitle="Explore and use community-contributed AI voice models."
         imageSrc="/assets/animal_muppet_hero_1773997756233.png"
@@ -217,9 +220,9 @@ export const Voices = ({ user }: { user: User | null }) => {
 
       <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
-        <input 
-          type="text" 
-          placeholder="Search your voices..." 
+        <input
+          type="text"
+          placeholder="Search your voices..."
           className="input-field pl-12"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -246,16 +249,16 @@ export const Voices = ({ user }: { user: User | null }) => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredVoices.map(voice => (
-            <motion.div 
+            <motion.div
               key={voice.id}
               whileHover={{ y: -4 }}
               className="glass rounded-[32px] overflow-hidden group flex flex-col"
             >
               {/* Thumbnail */}
               <div className="relative aspect-video">
-                <img 
+                <img
                   src={voice.avatar || `/assets/monkey_avatar_1774000814815.png`}
-                  alt={voice.name} 
+                  alt={voice.name}
                   className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-110"
                   referrerPolicy="no-referrer"
                 />
@@ -273,18 +276,18 @@ export const Voices = ({ user }: { user: User | null }) => {
                 <div>
                   {editingId === voice.id ? (
                     <div className="space-y-2 mb-2 w-full">
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
-                        className="input-field text-sm p-2 w-full" 
+                        className="input-field text-sm p-2 w-full"
                         placeholder="Voice Name"
                       />
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={editAvatar}
                         onChange={(e) => setEditAvatar(e.target.value)}
-                        className="input-field text-sm p-2 w-full" 
+                        className="input-field text-sm p-2 w-full"
                         placeholder="Avatar URL"
                       />
                       <div className="flex gap-2">
@@ -329,18 +332,18 @@ export const Voices = ({ user }: { user: User | null }) => {
       {/* Voice Creation Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             className="glass relative w-full max-w-lg p-8 rounded-[40px] space-y-6"
           >
-            <button 
+            <button
               onClick={() => setIsModalOpen(false)}
               className="absolute top-6 right-6 p-2 rounded-full hover:bg-white/10 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
-            
+
             <div className="space-y-2">
               <h2 className="text-2xl font-bold">Add New Voice</h2>
               <p className="text-text-muted text-sm">Upload a clean vocal sample or record directly from your microphone.</p>
@@ -349,8 +352,8 @@ export const Voices = ({ user }: { user: User | null }) => {
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-bold uppercase tracking-widest text-text-muted">Voice Name</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={newVoiceName}
                   onChange={(e) => setNewVoiceName(e.target.value)}
                   placeholder="e.g. My Custom Voice"
@@ -364,10 +367,10 @@ export const Voices = ({ user }: { user: User | null }) => {
                   <label className="btn-secondary py-2 px-4 cursor-pointer flex items-center gap-2 text-sm">
                     <Upload className="w-4 h-4" />
                     <span>Select Image</span>
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      className="hidden" 
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
                       onChange={(e) => setNewAvatarFile(e.target.files?.[0] || null)}
                     />
                   </label>
@@ -379,21 +382,21 @@ export const Voices = ({ user }: { user: User | null }) => {
 
               <div className="space-y-2">
                 <label className="text-sm font-bold uppercase tracking-widest text-text-muted">Source Audio (Required)</label>
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <label className="glass p-4 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-white/5 border-2 border-transparent transition-all">
                     <Upload className="w-6 h-6 text-brand-secondary" />
                     <span className="text-sm font-bold">Upload File</span>
-                    <input 
-                      type="file" 
-                      accept="audio/*" 
-                      className="hidden" 
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      className="hidden"
                       onChange={(e) => setNewAudioFile(e.target.files?.[0] || null)}
                     />
                   </label>
 
                   {isRecording ? (
-                    <button 
+                    <button
                       onClick={stopRecording}
                       className="glass bg-red-500/10 border-red-500 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer border-2 transition-all animate-pulse"
                     >
@@ -401,7 +404,7 @@ export const Voices = ({ user }: { user: User | null }) => {
                       <span className="text-sm font-bold text-red-500">Stop ({recordingTime}s)</span>
                     </button>
                   ) : (
-                    <button 
+                    <button
                       onClick={startRecording}
                       className="glass p-4 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-white/5 border-2 border-transparent transition-all"
                     >
@@ -419,7 +422,7 @@ export const Voices = ({ user }: { user: User | null }) => {
               </div>
             </div>
 
-            <button 
+            <button
               onClick={handleCreateVoice}
               disabled={isUploading || !newVoiceName.trim() || !newAudioFile || isRecording}
               className="w-full btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50"

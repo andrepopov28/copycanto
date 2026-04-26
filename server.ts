@@ -43,6 +43,8 @@ function dbInvoke(action: "upsert" | "list" | "get" | "delete", collection: stri
     py.stderr.on("data", (d) => stderr += d.toString());
 
     py.on("close", (code) => {
+      py.stdout.destroy();
+      py.stderr.destroy();
       if (code !== 0) {
         console.error(`DB Error (${action} ${collection}):`, stderr);
         return reject(new Error(stderr));
@@ -76,6 +78,7 @@ const ALLOWED_COLLECTIONS = ['voices', 'songs', 'covers', 'clones', 'jobs'];
 const ID_SAFE_RE = /^[a-zA-Z0-9_\-]{1,64}$/;
 const VALID_ENGINES = ['rvc', 'knn', 'neucosvc', 'amphion', 'none'];
 const ALLOWED_AUDIO_EXTS = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'];
+const PATH_SAFE_RE = /^[a-zA-Z0-9_\-\/\.]{1,256}$/;
 
 // RT-F1: Rate limiters — prevent DoS via unlimited job/upload queuing
 const coverCreateLimiter = rateLimit({
@@ -103,6 +106,13 @@ function safeStoragePath(assetUrl: string): string {
   return path.join(process.cwd(), 'storage', rel);
 }
 
+function sanitizePathParam(param: string): string {
+  if (!PATH_SAFE_RE.test(param)) {
+    throw new Error(`Invalid path parameter: ${param}`);
+  }
+  return param;
+}
+
 // Validate collection name (RT-B3, RT-B4)
 app.use('/api/db/:collection', (req, res, next) => {
   if (!ALLOWED_COLLECTIONS.includes(req.params.collection)) {
@@ -121,7 +131,7 @@ app.use('/api/db/:collection/:id', (req, res, next) => {
 
 // --- Multer Setup ---
 
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
 });
@@ -158,13 +168,14 @@ app.get('/api/repos', async (req, res) => {
 app.get('/api/repos/:owner/:repo/contents*', async (req, res) => {
   const { owner, repo } = req.params;
   const pathParam = req.params[0] || '';
-  
+
   if (!GITHUB_TOKEN) {
     return res.status(500).json({ error: "GITHUB_TOKEN not found in environment" });
   }
 
   try {
-    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents${pathParam}`, {
+    const sanitizedPath = sanitizePathParam(pathParam);
+    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents${sanitizedPath}`, {
       headers: {
         'Authorization': `token ${GITHUB_TOKEN}`,
         'Accept': 'application/vnd.github.v3+json'
@@ -192,7 +203,8 @@ app.get('/api/repos/:owner/:repo/raw*', async (req, res) => {
   }
 
   try {
-    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents${pathParam}`, {
+    const sanitizedPath = sanitizePathParam(pathParam);
+    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents${sanitizedPath}`, {
       headers: {
         'Authorization': `token ${GITHUB_TOKEN}`,
         'Accept': 'application/vnd.github.v3.raw'
@@ -287,10 +299,10 @@ const jobQueue: string[] = [];
 
 async function processQueue() {
   if (isProcessing || jobQueue.length === 0) return;
-  
+
   isProcessing = true;
   const jobId = jobQueue.shift()!;
-  
+
   try {
     const jobData = await dbInvoke("get", "jobs", jobId);
     if (!jobData) {
@@ -298,7 +310,7 @@ async function processQueue() {
       processQueue();
       return;
     }
-    
+
     const { userId, voiceId, youtubeUrl, audioUrl, isAcapella, engine, highQuality } = jobData;
 
     // Resolve voiceId (Check if it refers to a Clone or a direct Voice upload)
@@ -327,7 +339,6 @@ async function processQueue() {
       }
     }
 
-
     // 2. Trigger Python Engine (Asynchronous)
     await dbInvoke("upsert", "jobs", jobId, {
       ...jobData,
@@ -336,7 +347,7 @@ async function processQueue() {
       status: 'processing'
     });
 
-    const engineScript = process.env.MOCK_ENGINE === 'true' 
+    const engineScript = process.env.MOCK_ENGINE === 'true'
       ? path.join(process.cwd(), 'engines', 'process_sim.py')
       : path.join(process.cwd(), 'engines', 'process.py');
 
@@ -348,15 +359,15 @@ async function processQueue() {
       '--inputUrl', youtubeUrl || audioUrl || '',
       '--engine', resolvedEngine
     ];
-    
+
     if (resolvedVoicePath) {
       pythonArgs.push('--voicePath', resolvedVoicePath);
     }
-    
+
     if (isAcapella) {
       pythonArgs.push('--isAcapella');
     }
-    
+
     if (highQuality) {
       pythonArgs.push('--highQuality');
     }
@@ -364,7 +375,7 @@ async function processQueue() {
     const pythonProcess = spawn(pythonPath, pythonArgs);
 
     const startTime = Date.now();
-    
+
     pythonProcess.stdout.on('data', async (data) => {
       const lines = data.toString().split('\n').filter((l: string) => l.trim().length > 0);
       for (const line of lines) {
@@ -379,7 +390,7 @@ async function processQueue() {
               const remainingPercents = 100 - output.progress;
               estimatedTimeLeft = Math.round(timePerPercent * remainingPercents);
             }
-            
+
             await dbInvoke("upsert", "jobs", jobId, {
               ...jobData,
               progress: output.progress,
@@ -388,15 +399,15 @@ async function processQueue() {
               estimatedTimeLeft: estimatedTimeLeft || 0,
               status: output.progress === 100 ? 'completed' : (output.progress < 0 ? 'failed' : 'processing')
             });
-            
+
             if (output.progress === 100) {
               const title = jobData.title || `New Track (${jobId.slice(0, 4)})`;
               const artist = jobData.artist || 'Unknown Artist';
               const thumbnail = jobData.thumbnail || getRandomAvatar();
 
               // 1. Create Song document
-              const serverStems = isAcapella 
-                ? [{ name: 'Vocals', url: `/assets/songs/${jobId}/original.mp3` }] 
+              const serverStems = isAcapella
+                ? [{ name: 'Vocals', url: `/assets/songs/${jobId}/original.mp3` }]
                 : [
                     { name: 'Vocals', url: `/assets/songs/${jobId}/vocals.wav` },
                     { name: 'Instrumental', url: `/assets/songs/${jobId}/instrumental.wav` }
@@ -471,6 +482,8 @@ async function processQueue() {
     });
 
     pythonProcess.on('close', async (code) => {
+      pythonProcess.stdout.destroy();
+      pythonProcess.stderr.destroy();
       console.log(`Python process exited with code ${code}`);
       if (code !== 0) {
         const currentJob = await dbInvoke("get", "jobs", jobId);
@@ -511,6 +524,10 @@ app.post('/api/upload', uploadLimiter, upload.single('audio'), async (req, res) 
   }
 
   const { userId } = req.body;
+  if (!ID_SAFE_RE.test(userId)) {
+    return res.status(400).json({ error: "Invalid userId format" });
+  }
+
   const uniqueName = `${uuidv4()}_${fileData.originalname}`;
 
   // Ensure user directory exists
@@ -544,6 +561,10 @@ app.post('/api/upload/voice', uploadLimiter, upload.fields([{ name: 'audio', max
   const avatarFile = files['avatar'] ? files['avatar'][0] : null;
   const { userId, voiceName } = req.body;
 
+  if (!ID_SAFE_RE.test(userId)) {
+    return res.status(400).json({ error: "Invalid userId format" });
+  }
+
   // RT-E2: Validate audio file extension
   const audioExt = path.extname(audioFile.originalname).toLowerCase();
   if (!ALLOWED_AUDIO_EXTS.includes(audioExt)) {
@@ -564,7 +585,7 @@ app.post('/api/upload/voice', uploadLimiter, upload.fields([{ name: 'audio', max
   }
 
   const audioFilePath = path.join(userVoiceDir, `${voiceId}${audioExt}`);
-  
+
   let avatarUrl = '';
   // If no avatar uploaded, use default monkey avatar
   if (avatarFile) {
@@ -592,7 +613,7 @@ app.post('/api/upload/voice', uploadLimiter, upload.fields([{ name: 'audio', max
 app.post('/api/extract/youtube', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "Missing YouTube URL" });
-  
+
   let metadata = {
     artist: "YouTube Download",
     song_title: "Extracted Audio"
@@ -603,17 +624,17 @@ app.post('/api/extract/youtube', async (req, res) => {
     const tagsResponse = await fetch('http://localhost:11434/api/tags');
     if (!tagsResponse.ok) throw new Error("Could not connect to Ollama tags API");
     const { models } = await tagsResponse.json();
-    
+
     // 2. Filter for generative models (exclude embedding/whisper) and pick smallest
-    const generativeModels = models.filter((m: any) => 
-      !m.name.includes('embed') && 
+    const generativeModels = models.filter((m: any) =>
+      !m.name.includes('embed') &&
       !m.name.includes('whisper')
     ).sort((a: any, b: any) => a.size - b.size);
-    
+
     if (generativeModels.length === 0) {
       throw new Error("No suitable generative model found in Ollama. Please pull a model (e.g., llama3.2)");
     }
-    
+
     let extractedMetadata = null;
     let lastError = null;
 
@@ -621,7 +642,7 @@ app.post('/api/extract/youtube', async (req, res) => {
     for (const model of generativeModels) {
       try {
         console.log(`Attempting extraction with model: ${model.name} (${(model.size / 1024 / 1024 / 1024).toFixed(2)} GB)`);
-        
+
         const ollamaResponse = await fetch('http://localhost:11434/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -633,11 +654,11 @@ app.post('/api/extract/youtube', async (req, res) => {
             format: 'json'
           })
         });
-        
+
         if (!ollamaResponse.ok) continue;
         const ollamaData = await ollamaResponse.json();
         const rawResponse = ollamaData.response || '';
-        
+
         if (!rawResponse) {
           console.warn(`Model ${model.name} returned empty response, trying next...`);
           continue;
@@ -645,7 +666,7 @@ app.post('/api/extract/youtube', async (req, res) => {
 
         const startIdx = rawResponse.indexOf('{');
         const endIdx = rawResponse.lastIndexOf('}');
-        
+
         if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
           console.warn(`Model ${model.name} returned non-JSON, trying next...`);
           continue;
@@ -666,7 +687,7 @@ app.post('/api/extract/youtube', async (req, res) => {
     } else {
       console.warn(lastError ? `All models failed. Last error: ${lastError.message}` : "Failed to extract metadata with any available model. Using fallback.");
     }
-    
+
     res.json(metadata);
   } catch (error) {
     console.warn("Extraction error, using fallback metadata:", error);

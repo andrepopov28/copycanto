@@ -1,0 +1,236 @@
+[
+  {
+    "file": "server.ts",
+    "line": 225,
+    "severity": "CRITICAL",
+    "category": "path_traversal",
+    "issue": "User-controlled pathParam used directly in GitHub API URL without sanitization",
+    "fix": "Validate and sanitize pathParam before using in URL construction",
+    "node": "backend"
+  },
+  {
+    "file": "server.ts",
+    "line": 250,
+    "severity": "CRITICAL",
+    "category": "path_traversal",
+    "issue": "User-controlled pathParam used directly in GitHub raw content URL without sanitization",
+    "fix": "Validate and sanitize pathParam before using in URL construction",
+    "node": "backend"
+  },
+  {
+    "file": "src/services/imageService.ts",
+    "line": 5,
+    "severity": "CRITICAL",
+    "category": "security",
+    "issue": "Hardcoded empty string fallback for GEMINI_API_KEY exposes service to unauthorized usage",
+    "fix": "Validate API key presence at startup and fail gracefully if missing",
+    "node": "frontend"
+  },
+  {
+    "file": "seed_artists.py",
+    "line": 23,
+    "severity": "HIGH",
+    "category": "path_traversal",
+    "issue": "Hardcoded absolute paths may cause portability issues or unintended file access",
+    "fix": "Use relative paths or environment variables for configurable paths",
+    "node": "scripts"
+  },
+  {
+    "file": "seed_artists.py",
+    "line": 85,
+    "severity": "HIGH",
+    "category": "shell_injection",
+    "issue": "User-controlled data passed to subprocess.run via json.dumps",
+    "fix": "Validate/sanitize artist names before subprocess invocation",
+    "node": "scripts"
+  },
+  {
+    "file": "server.ts",
+    "line": 540,
+    "severity": "HIGH",
+    "category": "shell_injection",
+    "issue": "spawn() called with user-controllable pythonArgs including resolvedVoicePath and youtubeUrl",
+    "fix": "Sanitize all user inputs before passing to child processes",
+    "node": "backend"
+  },
+  {
+    "file": "src/pages/CreateCover.tsx",
+    "line": 140,
+    "severity": "HIGH",
+    "category": "logic_bug",
+    "issue": "Missing audioUrl property causes runtime error when setting selectedSong from YouTube extract",
+    "fix": "Initialize audioUrl properly in setSelectedSong call or ensure backend returns valid audioUrl",
+    "node": "frontend"
+  },
+  {
+    "file": "src/pages/Voices.tsx",
+    "line": 105,
+    "severity": "HIGH",
+    "category": "resource_leak",
+    "issue": "MediaStream tracks not stopped if recording fails before MediaRecorder setup completes",
+    "fix": "Wrap getUserMedia in try-finally and stop tracks on early return",
+    "node": "frontend"
+  },
+  {
+    "file": "src/pages/Voices.tsx",
+    "line": 117,
+    "severity": "HIGH",
+    "category": "resource_leak",
+    "issue": "MediaStream tracks may leak if MediaRecorder fails to initialize",
+    "fix": "Ensure stream.getTracks().forEach(t => t.stop()) runs even if recorder setup throws",
+    "node": "frontend"
+  },
+  {
+    "file": "src/services/imageService.ts",
+    "line": 10,
+    "severity": "HIGH",
+    "category": "prompt_injection",
+    "issue": "User-provided name parameter directly embedded in AI prompt without sanitization",
+    "fix": "Sanitize/validate name input before including in prompt",
+    "node": "frontend"
+  },
+  {
+    "file": "src/services/imageService.ts",
+    "line": 30,
+    "severity": "HIGH",
+    "category": "prompt_injection",
+    "issue": "User-provided title and artist parameters directly embedded in AI prompt without sanitization",
+    "fix": "Sanitize/validate title and artist inputs before including in prompt",
+    "node": "frontend"
+  },
+  {
+    "file": "scripts/fix_library_metadata.py",
+    "line": 50,
+    "severity": "MEDIUM",
+    "category": "logic_bug",
+    "issue": "Incomplete migration logic may leave orphaned voice entries",
+    "fix": "Implement comprehensive migration status tracking and rollback",
+    "node": "scripts"
+  },
+  {
+    "file": "scripts/reorganize_libraries.py",
+    "line": 12,
+    "severity": "MEDIUM",
+    "category": "resource_leak",
+    "issue": "Parquet file operations lack atomicity guarantees",
+    "fix": "Use temporary files and atomic rename for all parquet writes",
+    "node": "scripts"
+  },
+  {
+    "file": "scripts/reorganize_libraries.py",
+    "line": 45,
+    "severity": "MEDIUM",
+    "category": "path_traversal",
+    "issue": "File move operations use unsanitized filenames",
+    "fix": "Validate destination paths with os.path.join and basename",
+    "node": "scripts"
+  },
+  {
+    "file": "seed_artists.py",
+    "line": 67,
+    "severity": "MEDIUM",
+    "category": "resource_leak",
+    "issue": "Mock audio data written without proper cleanup or validation",
+    "fix": "Add checksum/validation for mock files and cleanup routine",
+    "node": "scripts"
+  },
+  {
+    "file": "server.ts",
+    "line": 675,
+    "severity": "MEDIUM",
+    "category": "path_traversal",
+    "issue": "userId used directly in file path without validation, allowing potential directory traversal",
+    "fix": "Validate userId against ID_SAFE_RE before using in file paths",
+    "node": "backend"
+  },
+  {
+    "file": "server.ts",
+    "line": 720,
+    "severity": "MEDIUM",
+    "category": "path_traversal",
+    "issue": "userId used directly in file path without validation in voice upload route",
+    "fix": "Validate userId against ID_SAFE_RE before using in file paths",
+    "node": "backend"
+  },
+  {
+    "file": "src/pages/CreateCover.tsx",
+    "line": 155,
+    "severity": "MEDIUM",
+    "category": "error_handling",
+    "issue": "Generic error logging without user feedback for YouTube extraction failure",
+    "fix": "Show user-friendly error toast/notification on extraction failure",
+    "node": "frontend"
+  },
+  {
+    "file": "src/pages/Songs.tsx",
+    "line": 100,
+    "severity": "MEDIUM",
+    "category": "error_handling",
+    "issue": "Silent failure when song upload or processing fails",
+    "fix": "Add proper error handling with user notifications for failed uploads",
+    "node": "frontend"
+  },
+  {
+    "file": "src/pages/Songs.tsx",
+    "line": 120,
+    "severity": "MEDIUM",
+    "category": "error_handling",
+    "issue": "Silent failure when YouTube paste processing fails",
+    "fix": "Add proper error handling with user notifications for failed YouTube processing",
+    "node": "frontend"
+  },
+  {
+    "file": "sync_libraries.py",
+    "line": 14,
+    "severity": "MEDIUM",
+    "category": "error_handling",
+    "issue": "Generic exception handling hides specific error details",
+    "fix": "Catch specific exceptions and log detailed error information",
+    "node": "scripts"
+  },
+  {
+    "file": "sync_libraries.py",
+    "line": 45,
+    "severity": "MEDIUM",
+    "category": "path_traversal",
+    "issue": "Filename-based path construction vulnerable to directory traversal",
+    "fix": "Sanitize filenames using os.path.basename and validate extensions",
+    "node": "scripts"
+  },
+  {
+    "file": "scripts/fix_library_metadata.py",
+    "line": 30,
+    "severity": "LOW",
+    "category": "resource_leak",
+    "issue": "Temporary parquet files may not be cleaned up on failure",
+    "fix": "Use try/finally block to ensure temp file cleanup",
+    "node": "scripts"
+  },
+  {
+    "file": "scripts/recover_asdis.py",
+    "line": 20,
+    "severity": "LOW",
+    "category": "logic_bug",
+    "issue": "Case-sensitive string comparison may miss valid matches",
+    "fix": "Use case-insensitive comparison with .lower() consistently",
+    "node": "scripts"
+  },
+  {
+    "file": "server.ts",
+    "line": 135,
+    "severity": "LOW",
+    "category": "resource_leak",
+    "issue": "Child process stdout/stderr streams not explicitly closed, potential resource leak",
+    "fix": "Add explicit cleanup for child process streams in dbInvoke",
+    "node": "backend"
+  },
+  {
+    "file": "server.ts",
+    "line": 540,
+    "severity": "LOW",
+    "category": "resource_leak",
+    "issue": "Python child process not explicitly killed on job failure, potential zombie processes",
+    "fix": "Implement proper cleanup and termination of child processes",
+    "node": "backend"
+  }
+]

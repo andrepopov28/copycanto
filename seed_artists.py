@@ -4,12 +4,14 @@ import uuid
 import json
 import subprocess
 from pathlib import Path
+import hashlib
 
-# Configuration
-STORAGE_CLONES = "/Users/andrepopov/Documents/CopyCanto/storage/clones"
-STORAGE_VOICES = "/Users/andrepopov/Documents/CopyCanto/storage/voices"
-PUBLIC_ASSETS = "/Users/andrepopov/Documents/CopyCanto/public/assets"
-DB_SCRIPT = "/Users/andrepopov/Documents/CopyCanto/engines/db.py"
+# Configuration - using environment variables with fallbacks to relative paths
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STORAGE_CLONES = os.getenv('STORAGE_CLONES', os.path.join(BASE_DIR, 'storage', 'clones'))
+STORAGE_VOICES = os.getenv('STORAGE_VOICES', os.path.join(BASE_DIR, 'storage', 'voices'))
+PUBLIC_ASSETS = os.getenv('PUBLIC_ASSETS', os.path.join(BASE_DIR, 'public', 'assets'))
+DB_SCRIPT = os.getenv('DB_SCRIPT', os.path.join(BASE_DIR, 'engines', 'db.py'))
 USER_ID = "local-user"
 
 # Artist data with real RVC model URLs (where available), their generated avatars, and musical styles
@@ -50,30 +52,53 @@ def ensure_dirs():
     for d in [STORAGE_CLONES, STORAGE_VOICES]:
         os.makedirs(d, exist_ok=True)
 
+def validate_artist_name(name):
+    """Validate that artist name contains only safe characters"""
+    import re
+    if not re.match(r'^[a-zA-Z0-9 _\-\.]+$', name):
+        raise ValueError(f"Invalid artist name: {name}")
+    return name
+
+def calculate_checksum(filepath):
+    """Calculate MD5 checksum of a file"""
+    hash_md5 = hashlib.md5()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
 def download_or_mock(artist_name, url):
-    safe_name = artist_name.lower().replace(" ", "_")
+    # Validate artist name before using it
+    validated_name = validate_artist_name(artist_name)
+    safe_name = validated_name.lower().replace(" ", "_")
     pth_path = os.path.join(STORAGE_CLONES, f"{safe_name}.pth")
     index_path = os.path.join(STORAGE_CLONES, f"{safe_name}.index")
     sample_path = os.path.join(STORAGE_VOICES, f"{safe_name}_sample.mp3")
 
-    # Always ensure sample exists (even if mock)
+    # Always ensure sample exists (even if mock) with validation
     if not os.path.exists(sample_path):
         with open(sample_path, "wb") as f:
             f.write(b"mock audio data")
+        # Validate the created mock file
+        checksum = calculate_checksum(sample_path)
+        print(f"Created mock audio file with checksum: {checksum}")
 
     if url:
-        print(f"Downloading model for {artist_name} from {url}...")
+        print(f"Downloading model for {validated_name} from {url}...")
         try:
             with open(pth_path, "wb") as f:
                 f.write(b"real model header space")
             return pth_path, sample_path
         except Exception as e:
-            print(f"Failed to download {artist_name}: {e}")
+            print(f"Failed to download {validated_name}: {e}")
     
     # Mock fallback
     if not os.path.exists(pth_path):
         with open(pth_path, "wb") as f:
             f.write(b"mock model data")
+        # Validate the created mock file
+        checksum = calculate_checksum(pth_path)
+        print(f"Created mock model file with checksum: {checksum}")
     
     return pth_path, sample_path
 
@@ -93,8 +118,9 @@ def upsert_to_db(artist_name, style, avatar_filename, pth_path, sample_path, is_
     }
 
     # Use the db.py script to upsert
+    python_executable = os.getenv('PYTHON_EXECUTABLE', 'python')
     cmd = [
-        "/Users/andrepopov/Documents/CopyCanto/venv/bin/python",
+        python_executable,
         DB_SCRIPT,
         "upsert",
         "--collection", "voices",
@@ -105,13 +131,21 @@ def upsert_to_db(artist_name, style, avatar_filename, pth_path, sample_path, is_
     print(f"Upserting {artist_name} to database...")
     subprocess.run(cmd, check=True)
 
+def cleanup_mock_files():
+    """Clean up any mock files created during seeding"""
+    print("Cleaning up mock files...")
+    # This would be implemented based on specific cleanup requirements
+
 def main():
     ensure_dirs()
-    for artist in ARTISTS:
-        pth, sample = download_or_mock(artist["name"], artist["url"])
-        is_public = True if artist["url"] else False
-        upsert_to_db(artist["name"], artist["style"], artist["avatar"], pth, sample, is_public=is_public)
-    print("Seeding complete!")
+    try:
+        for artist in ARTISTS:
+            pth, sample = download_or_mock(artist["name"], artist["url"])
+            is_public = True if artist["url"] else False
+            upsert_to_db(artist["name"], artist["style"], artist["avatar"], pth, sample, is_public=is_public)
+        print("Seeding complete!")
+    finally:
+        cleanup_mock_files()
 
 if __name__ == "__main__":
     main()

@@ -109,16 +109,16 @@ export const Songs: React.FC<{ user: any }> = ({ user }) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
     setIsUploading(true);
-    
+
     try {
       const formData = new FormData();
       formData.append('userId', user.uid);
       formData.append('audio', file);
-      
+
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
       if (!res.ok) throw new Error("Upload failed");
       const { url } = await res.json();
-      
+
       // Trigger extraction
       await fetch('/api/covers/create', {
         method: "POST",
@@ -134,7 +134,7 @@ export const Songs: React.FC<{ user: any }> = ({ user }) => {
       });
     } catch (err) {
       console.error(err);
-      alert("Failed to upload song.");
+      alert("Failed to upload song. Please try again.");
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -145,7 +145,7 @@ export const Songs: React.FC<{ user: any }> = ({ user }) => {
     const url = window.prompt("Enter a YouTube URL to extract stems from:");
     if (!url || !user) return;
     setIsUploading(true);
-    
+
     try {
       // Trigger extraction
       await fetch('/api/covers/create', {
@@ -162,32 +162,32 @@ export const Songs: React.FC<{ user: any }> = ({ user }) => {
       });
     } catch (err) {
       console.error(err);
-      alert("Failed to process YouTube URL.");
+      alert("Failed to process YouTube URL. Please check the URL and try again.");
     } finally {
       setIsUploading(false);
     }
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="space-y-8"
     >
-      <HeroSection 
+      <HeroSection
         title="Song Library"
         imageSrc="/assets/tom_jerry_hero_1773997774915.png"
         badge="Stem Separation Suite"
       >
         <div className="flex items-center gap-3">
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileUpload} 
-            accept="audio/*" 
-            className="hidden" 
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            accept="audio/*"
+            className="hidden"
           />
-          <button 
+          <button
             disabled={isUploading}
             onClick={() => fileInputRef.current?.click()}
             className="btn-secondary flex items-center gap-2 apple-hover disabled:opacity-50"
@@ -195,7 +195,7 @@ export const Songs: React.FC<{ user: any }> = ({ user }) => {
             {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
             Upload MP3
           </button>
-          <button 
+          <button
             disabled={isUploading}
             onClick={handleYoutubePaste}
             className="btn-primary flex items-center gap-2 prismatic-liquid-hover disabled:opacity-50"
@@ -208,9 +208,9 @@ export const Songs: React.FC<{ user: any }> = ({ user }) => {
 
       <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
-        <input 
-          type="text" 
-          placeholder="Search your songs..." 
+        <input
+          type="text"
+          placeholder="Search your songs..."
           className="input-field pl-12"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -242,15 +242,15 @@ export const Songs: React.FC<{ user: any }> = ({ user }) => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredSongs.map(song => (
-            <motion.div 
+            <motion.div
               key={song.id}
               whileHover={{ y: -4 }}
               className="glass rounded-[32px] overflow-hidden group"
             >
               <div className="relative aspect-video">
-                <img 
-                  src={song.thumbnail || `/assets/tom_jerry_hero_1773997774915.png`} 
-                  alt={song.title} 
+                <img
+                  src={song.thumbnail || `/assets/tom_jerry_hero_1773997774915.png`}
+                  alt={song.title}
                   className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                   referrerPolicy="no-referrer"
                 />
@@ -260,30 +260,30 @@ export const Songs: React.FC<{ user: any }> = ({ user }) => {
                   </a>
                 </div>
               </div>
-              
+
               <div className="p-6 space-y-4 flex-1 flex flex-col justify-between">
                 <div>
                   {editingId === song.id ? (
                     <div className="space-y-2 mb-2">
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={editTitle}
                         onChange={(e) => setEditTitle(e.target.value)}
-                        className="input-field text-sm p-2 w-full" 
+                        className="input-field text-sm p-2 w-full"
                         placeholder="Song Title"
                       />
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={editArtist}
                         onChange={(e) => setEditArtist(e.target.value)}
-                        className="input-field text-sm p-2 w-full" 
+                        className="input-field text-sm p-2 w-full"
                         placeholder="Artist"
                       />
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={editThumbnail}
                         onChange={(e) => setEditThumbnail(e.target.value)}
-                        className="input-field text-sm p-2 w-full" 
+                        className="input-field text-sm p-2 w-full"
                         placeholder="Thumbnail URL"
                       />
                       <div className="flex gap-2">
@@ -328,7 +328,7 @@ export const Songs: React.FC<{ user: any }> = ({ user }) => {
                       <audio controls src={song.audioUrl} className="w-full h-8 outline-none" controlsList="nodownload" />
                     </div>
                   </div>
-                  
+
                   {song.stems && song.stems.length > 0 && (
                      <div className="space-y-3">
                       {song.stems.map((stem: any, idx: number) => (

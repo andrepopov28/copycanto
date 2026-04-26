@@ -19,8 +19,14 @@ def db_invoke(action, collection, data=None):
         if action == "list":
             return json.loads(result.stdout)
         return result.stdout
+    except subprocess.CalledProcessError as e:
+        print(f"Subprocess error invoking db.py: {e.stderr}")
+        return None
+    except json.JSONDecodeError as e:
+        print(f"JSON decode error: {e}")
+        return None
     except Exception as e:
-        print(f"Error invoking db.py: {e}")
+        print(f"Unexpected error invoking db.py: {e}")
         return None
 
 def sync_clones():
@@ -37,12 +43,17 @@ def sync_clones():
     files = [f for f in os.listdir(storage_path) if f.endswith((".wav", ".mp3", ".flac"))]
     
     for filename in files:
-        rel_path = f"storage/clones/{filename}"
+        safe_filename = os.path.basename(filename)
+        if safe_filename != filename:
+            print(f"Skipping potentially unsafe filename: {filename}")
+            continue
+            
+        rel_path = f"storage/clones/{safe_filename}"
         if rel_path not in existing_paths:
-            print(f"Found orphaned clone: {filename}")
+            print(f"Found orphaned clone: {safe_filename}")
             # Create metadata
             clone_id = str(uuid.uuid4())
-            name = filename.rsplit('.', 1)[0].replace('_', ' ').title()
+            name = safe_filename.rsplit('.', 1)[0].replace('_', ' ').title()
             
             clone_data = {
                 "id": clone_id,
@@ -70,14 +81,19 @@ def sync_covers():
     files = [f for f in os.listdir(storage_path) if f.endswith((".wav", ".mp3", ".flac"))]
     
     for filename in files:
-        rel_path = f"storage/covers/{filename}"
+        safe_filename = os.path.basename(filename)
+        if safe_filename != filename:
+            print(f"Skipping potentially unsafe filename: {filename}")
+            continue
+            
+        rel_path = f"storage/covers/{safe_filename}"
         if rel_path not in existing_paths:
-            print(f"Found orphaned cover: {filename}")
+            print(f"Found orphaned cover: {safe_filename}")
             # Create metadata
             cover_id = str(uuid.uuid4())
             # Try to guess song/voice from filename if it follows a pattern (e.g. Song_Name_Voice_Name.wav)
-            parts = filename.rsplit('.', 1)[0].split('_')
-            title = filename.rsplit('.', 1)[0].replace('_', ' ').title()
+            parts = safe_filename.rsplit('.', 1)[0].split('_')
+            title = safe_filename.rsplit('.', 1)[0].replace('_', ' ').title()
             
             cover_data = {
                 "id": cover_id,

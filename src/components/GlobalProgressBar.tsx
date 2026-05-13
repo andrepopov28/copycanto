@@ -59,7 +59,10 @@ export const GlobalProgressBar: React.FC<{ user: any; compact?: boolean }> = ({ 
   };
 
   if (compact) {
-    const totalProgress = activeJobs.reduce((acc, job) => acc + job.progress, 0) / activeJobs.length;
+    // APP-C-PC2-005: Guard division by zero — activeJobs.length could be 0 if rendering races
+    const totalProgress = activeJobs.length > 0
+      ? activeJobs.reduce((acc, job) => acc + job.progress, 0) / activeJobs.length
+      : 0;
     
     return (
       <div className="flex items-center gap-3 px-4 py-2 rounded-2xl bg-brand-primary/10 border border-brand-primary/20 apple-hover">

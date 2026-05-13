@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { 
@@ -35,6 +35,40 @@ import {
   Moon
 } from 'lucide-react';
 
+// APP-C-PC2-006: ErrorBoundary prevents full app crash from unhandled render errors
+interface ErrorBoundaryState { hasError: boolean; error: Error | null }
+class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("Unhandled render error:", error, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-bg-main flex flex-col items-center justify-center gap-4 p-8">
+          <h1 className="text-2xl font-bold text-red-500">Something went wrong</h1>
+          <p className="text-text-muted text-sm max-w-md text-center">
+            An unexpected error occurred. Please refresh the page.
+          </p>
+          <button
+            className="btn-primary px-6 py-2"
+            onClick={() => this.setState({ hasError: false, error: null })}
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,28 +97,30 @@ const App: React.FC = () => {
   }
 
   return (
-    <ThemeProvider>
-      <Router>
-        <Layout user={user}>
-          <AnimatePresence mode="wait">
-            <Routes>
-              <Route path="/" element={<Home user={user} />} />
-              <Route path="/voices" element={<Voices user={user} />} />
-              <Route path="/songs" element={<Songs user={user} />} />
-              <Route path="/covers" element={<Covers user={user} />} />
-              <Route path="/clones" element={<Clones user={user} />} />
-              <Route path="/create" element={<CreateCover user={user} />} />
-              <Route path="/create/engine" element={<CreateCover user={user} />} />
-              <Route path="/create/voice" element={<CreateCover user={user} />} />
-              <Route path="/create/song" element={<CreateCover user={user} />} />
-              <Route path="/create/process" element={<CreateCover user={user} />} />
-              <Route path="/settings" element={<Placeholder title="Settings" />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </AnimatePresence>
-        </Layout>
-      </Router>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <Router>
+          <Layout user={user}>
+            <AnimatePresence mode="wait">
+              <Routes>
+                <Route path="/" element={<Home user={user} />} />
+                <Route path="/voices" element={<Voices user={user} />} />
+                <Route path="/songs" element={<Songs user={user} />} />
+                <Route path="/covers" element={<Covers user={user} />} />
+                <Route path="/clones" element={<Clones user={user} />} />
+                <Route path="/create" element={<CreateCover user={user} />} />
+                <Route path="/create/engine" element={<CreateCover user={user} />} />
+                <Route path="/create/voice" element={<CreateCover user={user} />} />
+                <Route path="/create/song" element={<CreateCover user={user} />} />
+                <Route path="/create/process" element={<CreateCover user={user} />} />
+                <Route path="/settings" element={<Placeholder title="Settings" />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </AnimatePresence>
+          </Layout>
+        </Router>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 };
 

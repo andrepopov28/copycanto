@@ -202,6 +202,12 @@ app.get('/api/repos/:owner/:repo/contents*', async (req, res) => {
     return res.status(500).json({ error: "GITHUB_TOKEN not found in environment" });
   }
 
+  // APP-C-PC1-005: Validate owner/repo to prevent SSRF — only allow safe GitHub-style identifiers
+  const ownerRepoRegex = /^[a-zA-Z0-9\-_.]{1,100}$/;
+  if (!ownerRepoRegex.test(owner) || !ownerRepoRegex.test(repo)) {
+    return res.status(400).json({ error: "Invalid owner/repo format" });
+  }
+
   try {
     const sanitizedPath = sanitizePathParam(pathParam);
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents${sanitizedPath}`, {
@@ -230,6 +236,12 @@ app.get('/api/repos/:owner/:repo/raw*', async (req, res) => {
 
   if (!GITHUB_TOKEN) {
     return res.status(500).json({ error: "GITHUB_TOKEN not found in environment" });
+  }
+
+  // APP-C-PC1-005: Validate owner/repo to prevent SSRF — only allow safe GitHub-style identifiers
+  const ownerRepoRegex = /^[a-zA-Z0-9\-_.]{1,100}$/;
+  if (!ownerRepoRegex.test(owner) || !ownerRepoRegex.test(repo)) {
+    return res.status(400).json({ error: "Invalid owner/repo format" });
   }
 
   try {
@@ -843,7 +855,7 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
-    console.log("Available environment variables:", Object.keys(process.env));
+    // APP-C-PC1-001: Do not log env var names — they can reveal secrets presence
   });
 }
 

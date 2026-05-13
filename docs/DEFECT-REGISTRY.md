@@ -161,11 +161,11 @@ The codebase has multiple critical security vulnerabilities that require immedia
 
 | ID | Sev | File | Fixed | Verified | Note |
 |---|---|---|---|---|---|
-| APP-C-PC1-001 | CRITICAL | `server.ts` | ✅ | ✅ | 3 patch(es) applied |
+| APP-C-PC1-001 | CRITICAL | `server.ts` | ✅ | ✅ | 3 patch(es) applied; startup env-name log removed 2026-05-13 |
 | APP-C-PC1-002 | HIGH | `server.ts` | ✅ | ✅ | 1 patch(es) applied |
 | APP-C-PC1-003 | HIGH | `server.ts` | ✅ | ✅ | 1 patch(es) applied |
 | APP-C-PC1-004 | CRITICAL | `server.ts` | ✅ | ✅ | 1 patch(es) applied |
-| APP-C-PC1-005 | HIGH | `server.ts` | ❌ | — | no SEARCH/REPLACE blocks |
+| APP-C-PC1-005 | HIGH | `server.ts` | ✅ FIXED (2026-05-13 manual) | ✅ | owner/repo regex guard added to both /contents* and /raw* routes |
 | APP-C-PC1-006 | MEDIUM | `server.ts` | ✅ | ✅ | 3 patch(es) applied |
 | APP-C-PC1-007 | MEDIUM | `server.ts` | ✅ | ⚠️ | 1 patch(es) applied |
 | APP-C-PC1-008 | MEDIUM | `server.ts` | ✅ | ⚠️ | 5 patch(es) applied |
@@ -343,8 +343,8 @@ The codebase shows several concerning patterns but is not in critical condition.
 | APP-C-PC2-002 | HIGH | `src/components/GlobalProgressBar.tsx` | ✅ | ✅ | 1 patch(es) applied |
 | APP-C-PC2-003 | CRITICAL | `src/components/Layout.tsx` | ✅ | ✅ | 1 patch(es) applied |
 | APP-C-PC2-004 | MEDIUM | `src/App.tsx` | ❌ | — | skipped: Code already implements the requested changes corre |
-| APP-C-PC2-005 | MEDIUM | `src/components/GlobalProgressBar.tsx` | ❌ | — | no SEARCH/REPLACE blocks |
-| APP-C-PC2-006 | HIGH | `src/App.tsx` | ❌ | — | skipped: Requires adding ErrorBoundary component and wrappin |
+| APP-C-PC2-005 | MEDIUM | `src/components/GlobalProgressBar.tsx` | ✅ FIXED (2026-05-13 manual) | ✅ | Guard `activeJobs.length > 0` before division |
+| APP-C-PC2-006 | HIGH | `src/App.tsx` | ✅ FIXED (2026-05-13 manual) | ✅ | ErrorBoundary class component added; wraps ThemeProvider+Router |
 | APP-C-PC2-007 | LOW | `src/components/GlobalProgressBar.tsx` | ❌ | — | LOW severity — skipped |
 | APP-C-PC2-008 | MEDIUM | `src/components/Layout.tsx` | ✅ | ✅ | 1 patch(es) applied |
 

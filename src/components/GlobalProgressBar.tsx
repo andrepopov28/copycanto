@@ -26,6 +26,7 @@ export const GlobalProgressBar: React.FC<{ user: any; compact?: boolean }> = ({ 
 
   useEffect(() => {
     if (!user) return;
+    let isMounted = true;
 
     const jobsQuery = query(
       collection(db, "jobs"),
@@ -34,13 +35,18 @@ export const GlobalProgressBar: React.FC<{ user: any; compact?: boolean }> = ({ 
     );
 
     const unsubscribe = onSnapshot(jobsQuery, (snapshot) => {
+      if (!isMounted) return;
       const jobsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job));
       setActiveJobs(jobsData);
     }, (err) => {
+      if (!isMounted) return;
       handleFirestoreError(err, OperationType.LIST, "jobs");
     });
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, [user]);
 
   if (activeJobs.length === 0) return null;

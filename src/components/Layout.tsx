@@ -22,9 +22,16 @@ import { cn } from '../lib/utils';
 import { useTheme } from '../contexts/ThemeContext';
 import { GlobalProgressBar } from './GlobalProgressBar';
 
+interface User {
+  uid: string;
+  displayName?: string | null;
+  email?: string | null;
+  photoURL?: string | null;
+}
+
 interface LayoutProps {
   children: React.ReactNode;
-  user: any;
+  user: User | null;
 }
 
 const NavItem = ({ to, icon: Icon, label, active }: { to: string, icon: any, label: string, active: boolean }) => (
@@ -88,7 +95,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user }) => {
         <div className="mt-auto space-y-4">
           <div className="glass-light p-4 rounded-2xl flex items-center gap-3">
             <img 
-              src={user?.photoURL || `https://picsum.photos/seed/${user?.uid}/100/100`} 
+              src={user?.photoURL ? encodeURI(user.photoURL) : `https://picsum.photos/seed/${encodeURIComponent(user?.uid || 'default')}/100/100`} 
               alt={user?.displayName} 
               className="w-10 h-10 rounded-full border border-glass-border" 
             />

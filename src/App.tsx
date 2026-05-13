@@ -40,13 +40,18 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+    let isMounted = true;
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      if (!isMounted) return;
       if (u) {
-        setUser(u as any);
+        setUser(u);
       }
       setLoading(false);
     });
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   if (loading) {

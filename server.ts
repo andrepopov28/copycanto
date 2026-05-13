@@ -69,7 +69,22 @@ const PORT = 7842;
 const SYSTEM_USER = 'local-user';
 
 // --- Security Middleware ---
-app.use(helmet()); // RT-D2: Add security headers (CSP, X-Frame-Options, XCTO, HSTS)
+app.set('trust proxy', true); // Trust first proxy for correct IP extraction
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+})); // RT-D2: Add security headers (CSP, X-Frame-Options, XCTO, HSTS)
 app.use(cors({ origin: ['http://localhost:7842', 'localhost:7842'], credentials: false })); // RT-D1: Restrict CORS
 app.use(express.json({ limit: '2mb' })); // RT-C6: Set payload size limit
 
@@ -87,6 +102,11 @@ const coverCreateLimiter = rateLimit({
   message: { error: 'Too many job requests. Please wait before submitting another.' },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Use X-Forwarded-For if present, otherwise fall back to remoteAddress
+    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket.remoteAddress;
+    return ip || 'unknown-ip';
+  }
 });
 
 const uploadLimiter = rateLimit({
@@ -95,10 +115,18 @@ const uploadLimiter = rateLimit({
   message: { error: 'Too many uploads. Please wait.' },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Use X-Forwarded-For if present, otherwise fall back to remoteAddress
+    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket.remoteAddress;
+    return ip || 'unknown-ip';
+  }
 });
 
 // RT-F2: Safe storage path helper — prevents path traversal via DB-sourced audioUrl values
 function safeStoragePath(assetUrl: string): string {
+  if (assetUrl.includes('..')) {
+    throw new Error(`Unsafe asset path (contains '..'): ${assetUrl}`);
+  }
   const rel = path.normalize(assetUrl.replace('/assets/', ''));
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
     throw new Error(`Unsafe asset path rejected: ${assetUrl}`);
@@ -154,8 +182,9 @@ app.get('/api/repos', async (req, res) => {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      return res.status(response.status).json(errorData);
+      const errorText = await response.text();
+      console.error(`GitHub API error (repos): ${response.status} - ${errorText}`);
+      return res.status(response.status).json({ error: "Failed to fetch repositories from GitHub" });
     }
 
     const data = await response.json();
@@ -183,8 +212,9 @@ app.get('/api/repos/:owner/:repo/contents*', async (req, res) => {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      return res.status(response.status).json(errorData);
+      const errorText = await response.text();
+      console.error(`GitHub API error (contents): ${response.status} - ${errorText}`);
+      return res.status(response.status).json({ error: "Failed to fetch contents from GitHub" });
     }
 
     const data = await response.json();
@@ -212,8 +242,9 @@ app.get('/api/repos/:owner/:repo/raw*', async (req, res) => {
     });
 
     if (!response.ok) {
-      const errorData = await response.text();
-      return res.status(response.status).send(errorData);
+      const errorText = await response.text();
+      console.error(`GitHub API error (raw): ${response.status} - ${errorText}`);
+      return res.status(response.status).json({ error: "Failed to fetch raw content from GitHub" });
     }
 
     const data = await response.text();
@@ -230,7 +261,8 @@ app.get('/api/db/:collection', async (req, res) => {
     const data = await dbInvoke("list", req.params.collection);
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: String(error) });
+    console.error("Database list error:", error);
+    res.status(500).json({ error: "Database operation failed" });
   }
 });
 
@@ -240,7 +272,8 @@ app.get('/api/db/:collection/:id', async (req, res) => {
     if (!data) return res.status(404).json({ error: "Not found" });
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: String(error) });
+    console.error("Database get error:", error);
+    res.status(500).json({ error: "Database operation failed" });
   }
 });
 
@@ -249,7 +282,8 @@ app.delete('/api/db/:collection/:id', async (req, res) => {
     await dbInvoke("delete", req.params.collection, req.params.id);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: String(error) });
+    console.error("Database delete error:", error);
+    res.status(500).json({ error: "Database operation failed" });
   }
 });
 
@@ -267,7 +301,8 @@ app.post('/api/db/:collection', async (req, res) => {
     await dbInvoke("upsert", req.params.collection, data.id, data);
     res.json({ success: true, id: data.id });
   } catch (error) {
-    res.status(500).json({ error: String(error) });
+    console.error("Database upsert error:", error);
+    res.status(500).json({ error: "Database operation failed" });
   }
 });
 
@@ -282,12 +317,18 @@ app.patch('/api/db/:collection/:id', async (req, res) => {
       return res.status(403).json({ error: "Forbidden" });
     }
 
+    // Prevent userId modification
+    if (req.body.hasOwnProperty('userId') && req.body.userId !== existing.userId) {
+      return res.status(403).json({ error: "Cannot modify userId" });
+    }
+
     // Merge
     const updated = { ...existing, ...req.body, id: req.params.id, userId: SYSTEM_USER };
     await dbInvoke("upsert", req.params.collection, req.params.id, updated);
     res.json({ success: true, id: req.params.id });
   } catch (error) {
-    res.status(500).json({ error: String(error) });
+    console.error("Database patch error:", error);
+    res.status(500).json({ error: "Database operation failed" });
   }
 });
 
@@ -528,7 +569,8 @@ app.post('/api/upload', uploadLimiter, upload.single('audio'), async (req, res) 
     return res.status(400).json({ error: "Invalid userId format" });
   }
 
-  const uniqueName = `${uuidv4()}_${fileData.originalname}`;
+  const safeName = fileData.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
+  const uniqueName = `${uuidv4()}_${safeName}`;
 
   // Ensure user directory exists
   const userAudioDir = path.join(storagePath, 'audio', userId || 'anonymous');
@@ -739,6 +781,12 @@ app.post('/api/covers/create', coverCreateLimiter, async (req, res) => {
   const numericPitch = Number(pitch) || 0;
   if (isNaN(numericPitch) || Math.abs(numericPitch) > 12) {
     return res.status(400).json({ error: "Pitch must be a number between -12 and +12" });
+  }
+
+  // RT-C7: Validate YouTube URL format
+  const urlRegex = /^(https?:\/\/)?([\w\-]+\.)+[\w\-]+(\/[\w\-._~:/?#[\]@!$&'()*+,;=]*)?$/i;
+  if (youtubeUrl && !urlRegex.test(youtubeUrl)) {
+    return res.status(400).json({ error: "Invalid YouTube URL format" });
   }
 
   const jobId = uuidv4();

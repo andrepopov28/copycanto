@@ -350,3 +350,100 @@ The codebase shows several concerning patterns but is not in critical condition.
 
 ---
 
+## Perspective RT-2026-06-03: Opus Red-Team Audit (functional + security)
+
+**Generated:** 2026-06-03  
+**Auditor:** Claude Opus 4.8 (1M) red-team — full-stack manual audit + two parallel read-only sub-audits, every lead verified against source before fixing.  
+**Method:** Mapped Express `server.ts`, the mock-Firebase shim `src/db.ts`, all React pages, and the Python AI pipeline. Fixes verified via live API calls (mock engine), deterministic replication of `db.ts` query logic against live data, `tsc --noEmit`, `vite build`, and `py_compile`.
+
+### Summary
+
+| Category | Count |
+|---|---|
+| CRITICAL | 3 |
+| HIGH | 3 |
+| MEDIUM | 4 |
+| LOW | 1 |
+| Fixed + verified | 11 |
+
+This pass focused on defects that survived the 2026-05-13 audit, including the **default user flow being completely broken** (a class the earlier security-only sweep missed). Every finding below is fixed in commit-ready state across 6 files: `server.ts`, `src/db.ts`, `src/pages/CreateCover.tsx`, `src/pages/Voices.tsx`, `engines/process.py`, `engines/process_sim.py`.
+
+### RT-0603-01 — Default "Superman" engine rejected by backend (default flow dead)
+- **Severity:** CRITICAL · **File:** `src/pages/CreateCover.tsx`
+- **Root cause:** UI engine state defaulted to the brand codename `'superman'`, sent verbatim to `/api/covers/create`. Backend `VALID_ENGINES` only accepts `rvc/knn/neucosvc/amphion/none` → **HTTP 400**, and the frontend swallowed it (console-only), so the default "Create Cover" did nothing.
+- **Fix:** Engine value is now the real id `'rvc'` (UI still labels it "Superman Engine").
+- **Verified:** live API — `engine:'superman'` → 400, `engine:'rvc'` → 200 + job completed.
+
+### RT-0603-02 — Voice Library always empty
+- **Severity:** CRITICAL · **File:** `src/pages/Voices.tsx:163`
+- **Root cause:** Library queried `where("isPublic","==",true)` but uploads write `isPublic:false`, so the user's own voices were never shown.
+- **Fix:** Dropped the `isPublic` filter (single-user local app shows all voices).
+- **Verified:** replicated `db.ts` filter on live data — 1 → 2 voices.
+
+### RT-0603-03 — CreateCover voice picker always empty
+- **Severity:** CRITICAL · **File:** `src/pages/CreateCover.tsx:89`
+- **Root cause:** Picker filtered `where("archived","==",false)`, but no voice record ever has an `archived` field, so every voice was filtered out → no cover could be created.
+- **Fix:** Dropped the `archived` filter (the archive feature does not exist).
+- **Verified:** replicated filter on live data — 1 → 2 voices.
+
+### RT-0603-04 — Pitch slider never applied
+- **Severity:** HIGH · **Files:** `server.ts`, `engines/process.py:228`
+- **Root cause:** `pitch` was validated and stored on the job but never forwarded to the engine; `process.py` hardcoded RVC `--f0_key 0`.
+- **Fix:** `server.ts` forwards `--pitch`; `process.py` accepts `--pitch` and passes it as RVC `f0_key`. (`rvc_infer.py` already supported `--f0_key`.)
+- **Verified:** `pitch` persisted on job record and forwarded only when non-zero.
+
+### RT-0603-05 — Server bound to 0.0.0.0 (LAN exposure, no auth)
+- **Severity:** HIGH · **File:** `server.ts`
+- **Root cause:** `app.listen(PORT, "0.0.0.0")` exposed the unauthenticated API (uploads, deletes, file reads — all owned by hardcoded `SYSTEM_USER`) to the whole LAN, contradicting the local-first README.
+- **Fix:** Bind to `127.0.0.1`.
+
+### RT-0603-06 — Job stranded forever on malformed stored audioUrl
+- **Severity:** HIGH · **File:** `server.ts` (`processQueue`)
+- **Root cause:** `safeStoragePath()` correctly rejects non-`/assets/` paths by throwing, but `processQueue` caught the error without updating the job, leaving it `pending` with an infinite UI spinner. Triggered by legacy `/api/storage/...` audioUrls (see Data Note).
+- **Fix:** Added `tryResolveVoiceAsset()` (non-fatal resolution that drops unsafe paths) and the queue `catch` now marks the job `failed` with the error message. The security guard is preserved — unsafe paths are still rejected, just no longer fatal.
+- **Verified:** malformed-voice job now ends `failed` with a clear message; Asdís job proceeds via the engine's reference-directory fallback.
+
+### RT-0603-07 — Rate-limit bypass via X-Forwarded-For
+- **Severity:** MEDIUM · **File:** `server.ts`
+- **Root cause:** `trust proxy: true` + custom keyGenerators read client `X-Forwarded-For`, so rotating the header defeated both limiters.
+- **Fix:** `trust proxy: false`; use express-rate-limit's default `req.ip` key (correct IPv6 handling, unspoofable on loopback).
+
+### RT-0603-08 — Local file disclosure via unvalidated audioUrl
+- **Severity:** MEDIUM · **File:** `server.ts` (`/api/covers/create`)
+- **Root cause:** `audioUrl` was passed to `process.py`, which `cp`s the referenced local path into served storage. An unvalidated value (`/etc/passwd`, `../../secret`) became a readable asset. The 2026-05-13 fix only validated `youtubeUrl`.
+- **Fix:** Require `audioUrl` to start with `/assets/` and contain no `..`.
+- **Verified:** `/etc/passwd` → 400, `/assets/../../etc/passwd` → 400, `/assets/...` → 200.
+
+### RT-0603-09 — Hardened CSP broke `npm run dev` (blank page)
+- **Severity:** MEDIUM · **File:** `server.ts`
+- **Root cause:** Helmet CSP `script-src 'self'` blocked Vite's inline React-refresh preamble (`@vitejs/plugin-react can't detect preamble`), so the documented dev workflow rendered a blank page.
+- **Fix:** Apply the strict CSP in production only; disable CSP in dev where Vite needs inline scripts + eval + HMR websockets. Other helmet headers still apply in both.
+
+### RT-0603-10 — MOCK engine path broken by `--highQuality`
+- **Severity:** MEDIUM · **File:** `engines/process_sim.py`
+- **Root cause:** Server passes `--highQuality` (the UI default) and now `--pitch`, but the simulator's argparse accepted neither → exit 2 → every MOCK/UAT job failed.
+- **Fix:** Simulator accepts (and ignores) `--highQuality` and `--pitch`.
+- **Verified:** mock job runs 10→100 with both flags.
+
+### RT-0603-11 — Mock DB ignored orderBy/limit
+- **Severity:** LOW · **File:** `src/db.ts`
+- **Root cause:** `getDocs` only implemented `where`; `orderBy`/`limit` were no-ops, so Home's "3 recent covers" showed all covers unsorted.
+- **Fix:** Implemented `orderBy` (null-safe) and `limit` in the client filter.
+- **Verified:** Home covers 25 → 3, newest-first.
+
+### False positives discarded (verified non-bugs)
+- `knnvc_infer.py` "out_wav[None] is 3-D" — `knn_vc.match()` returns 1-D, so `[None]` yields correct 2-D. No change.
+- `neucosvc_infer.py` / `amphion_infer.py` "silent subprocess failure" — both check `returncode` and exit non-zero. No change.
+- `neucosvc_infer.py` "`.numpy()` crash" — tensor is CPU float32 without grad on the normal path. No change.
+
+### Data Note (not code — needs migration, not fixed here)
+~96 of 107 `clones` records and the `asdis` `voices` record store legacy `audioUrl`
+values like `/api/storage/voices/<name>_sample.mp3` (corrupt prefix; files don't
+exist — real Asdís samples are at `storage/voices/asdis/`). Code is now resilient
+(jobs fail/fall-back gracefully instead of stranding), but previews 404 and RVC
+conversions for these voices still need a one-off data migration rewriting
+`/api/storage/` → `/assets/` and pointing each record at a real file. Do **not**
+mass-rewrite by guessing paths.
+
+---
+

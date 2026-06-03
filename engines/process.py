@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--isAcapella", action="store_true", help="Skip stem separation")
     parser.add_argument("--engine", default="rvc", choices=["rvc", "knn", "neucosvc", "amphion", "none"], help="Voice conversion engine: rvc, knn, neucosvc, amphion, or none")
     parser.add_argument("--highQuality", action="store_true", default=True, help="Enable highest quality settings")
+    parser.add_argument("--pitch", type=int, default=0, help="Pitch shift in semitones (applied as RVC f0_key)")
     args = parser.parse_args()
 
     job_id = args.jobId
@@ -225,7 +226,7 @@ def main():
                     '--input_path', os.path.abspath(vocal_track),
                     '--output_path', os.path.abspath(converted_output),
                     '--f0_method', f0_method,
-                    '--f0_key', '0',
+                    '--f0_key', str(args.pitch),
                     '--index_rate', '0.75',
                     '--filter_radius', '3',
                     '--rms_mix_rate', '0.25',

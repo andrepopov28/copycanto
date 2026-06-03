@@ -158,9 +158,11 @@ export const Voices = ({ user }: { user: User | null }) => {
   useEffect(() => {
     if (!user) return;
 
+    // Local single-user app: show every voice the user has added.
+    // (Previously filtered on `isPublic == true`, but voices are created with
+    // `isPublic: false`, so the library was always empty.)
     const voicesQuery = query(
       collection(db, "voices"),
-      where("isPublic", "==", true),
       orderBy("createdAt", "desc")
     );
 

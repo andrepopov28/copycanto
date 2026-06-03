@@ -64,7 +64,9 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
   }, []);
 
   // Selection State
-  const [engine, setEngine] = useState<'superman' | 'knn' | 'neucosvc' | 'amphion'>('superman');
+  // NOTE: 'rvc' is branded "Superman Engine" in the UI. The value MUST be a real
+  // backend engine id (rvc/knn/neucosvc/amphion) — the API rejects anything else.
+  const [engine, setEngine] = useState<'rvc' | 'knn' | 'neucosvc' | 'amphion'>('rvc');
   const [selectedVoice, setSelectedVoice] = useState<Voice | null>(null);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -81,13 +83,11 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
   useEffect(() => {
     if (!user) return;
 
-    // Fetch Voices
+    // Fetch Voices. Local single-user app: show every voice in the library.
+    // (Previously filtered on `archived == false`, a field that is never written,
+    // so the picker was always empty and no cover could be created.)
     const voicesUnsub = onSnapshot(
-      query(
-        collection(db, "voices"),
-        where("creatorId", "==", user.uid),
-        where("archived", "==", false)
-      ),
+      query(collection(db, "voices")),
       (snap) => setVoices(snap.docs.map(d => ({ id: d.id, ...d.data() } as Voice)))
     );
 
@@ -207,10 +207,10 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <button
-              onClick={() => setEngine('superman')}
+              onClick={() => setEngine('rvc')}
               className={cn(
                 "glass p-8 rounded-[40px] text-left space-y-4 border-2 transition-all apple-hover",
-                engine === 'superman' ? "border-brand-primary bg-brand-primary/5" : "border-transparent"
+                engine === 'rvc' ? "border-brand-primary bg-brand-primary/5" : "border-transparent"
               )}
             >
               <div className="w-16 h-16 rounded-2xl bg-brand-primary/10 flex items-center justify-center">
@@ -220,7 +220,7 @@ export const CreateCover: React.FC<{ user: any }> = ({ user }) => {
                 <h3 className="text-xl font-bold">Superman Engine</h3>
                 <p className="text-sm text-text-muted">High-fidelity retrieval-based voice conversion. Best for professional singing.</p>
               </div>
-              {engine === 'superman' && <Check className="w-6 h-6 text-brand-primary" />}
+              {engine === 'rvc' && <Check className="w-6 h-6 text-brand-primary" />}
             </button>
 
             <button

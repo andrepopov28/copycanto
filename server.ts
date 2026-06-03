@@ -69,21 +69,32 @@ const PORT = 7842;
 const SYSTEM_USER = 'local-user';
 
 // --- Security Middleware ---
-app.set('trust proxy', true); // Trust first proxy for correct IP extraction
+// Do NOT trust proxy headers. The app binds to loopback with no upstream proxy,
+// so honouring a client-supplied X-Forwarded-For would let any caller spoof its
+// IP and defeat the rate limiters below. Express default (false) is set explicitly.
+app.set('trust proxy', false);
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'"],
-      fontSrc: ["'self'"],
-      objectSrc: ["'none'"],
-      mediaSrc: ["'self'"],
-      frameSrc: ["'none'"],
-    },
-  },
+  // Strict CSP in PRODUCTION only. The Vite dev server injects an inline
+  // React-refresh preamble and relies on eval + a websocket for HMR — all of
+  // which a strict `script-src 'self'` policy blocks, which previously left the
+  // documented `npm run dev` workflow rendering a blank page. Helmet's other
+  // hardening headers (X-Frame-Options, XCTO, HSTS, etc.) still apply in dev.
+  contentSecurityPolicy: IS_PRODUCTION
+    ? {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", "data:"],
+          connectSrc: ["'self'"],
+          fontSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          mediaSrc: ["'self'"],
+          frameSrc: ["'none'"],
+        },
+      }
+    : false,
 })); // RT-D2: Add security headers (CSP, X-Frame-Options, XCTO, HSTS)
 app.use(cors({ origin: ['http://localhost:7842', 'localhost:7842'], credentials: false })); // RT-D1: Restrict CORS
 app.use(express.json({ limit: '2mb' })); // RT-C6: Set payload size limit
@@ -102,11 +113,9 @@ const coverCreateLimiter = rateLimit({
   message: { error: 'Too many job requests. Please wait before submitting another.' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    // Use X-Forwarded-For if present, otherwise fall back to remoteAddress
-    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket.remoteAddress;
-    return ip || 'unknown-ip';
-  }
+  // Use the library's default key generator (req.ip, with correct IPv6 handling).
+  // With `trust proxy` disabled, req.ip is the real socket address and cannot be
+  // spoofed via X-Forwarded-For.
 });
 
 const uploadLimiter = rateLimit({
@@ -115,11 +124,7 @@ const uploadLimiter = rateLimit({
   message: { error: 'Too many uploads. Please wait.' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    // Use X-Forwarded-For if present, otherwise fall back to remoteAddress
-    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket.remoteAddress;
-    return ip || 'unknown-ip';
-  }
+  // Default key generator (req.ip); see coverCreateLimiter note above.
 });
 
 // RT-F2: Safe storage path helper — prevents path traversal via DB-sourced audioUrl values
@@ -132,6 +137,22 @@ function safeStoragePath(assetUrl: string): string {
     throw new Error(`Unsafe asset path rejected: ${assetUrl}`);
   }
   return path.join(process.cwd(), 'storage', rel);
+}
+
+// Resolve a stored voice/clone asset URL to a filesystem path, tolerating
+// legacy/malformed values (e.g. older records saved with a "/api/storage/..."
+// prefix instead of "/assets/..."). Returns "" instead of throwing so a single
+// bad record can't abort the whole job — downstream the engine falls back to a
+// per-voice reference directory or reports a precise "model missing" error. The
+// security guard in safeStoragePath still runs; an unsafe path is simply dropped.
+function tryResolveVoiceAsset(assetUrl: string | undefined | null): string {
+  if (!assetUrl) return "";
+  try {
+    return safeStoragePath(assetUrl);
+  } catch (e) {
+    console.warn(`Ignoring unusable voice asset path "${assetUrl}": ${e instanceof Error ? e.message : e}`);
+    return "";
+  }
 }
 
 function sanitizePathParam(param: string): string {
@@ -364,7 +385,7 @@ async function processQueue() {
       return;
     }
 
-    const { userId, voiceId, youtubeUrl, audioUrl, isAcapella, engine, highQuality } = jobData;
+    const { userId, voiceId, youtubeUrl, audioUrl, isAcapella, engine, highQuality, pitch } = jobData;
 
     // Resolve voiceId (Check if it refers to a Clone or a direct Voice upload)
     let resolvedVoiceId = voiceId;
@@ -373,11 +394,11 @@ async function processQueue() {
     const cloneData = await dbInvoke("get", "clones", voiceId);
     if (cloneData) {
       resolvedVoiceId = cloneData.voiceId; // The underlying model ID used for RVC
-      resolvedVoicePath = safeStoragePath(cloneData.audioUrl); // RT-F2: path traversal guard
+      resolvedVoicePath = tryResolveVoiceAsset(cloneData.audioUrl); // RT-F2: path traversal guard (non-fatal)
     } else {
       const voiceData = await dbInvoke("get", "voices", voiceId);
       if (voiceData) {
-        resolvedVoicePath = safeStoragePath(voiceData.audioUrl); // RT-F2: path traversal guard
+        resolvedVoicePath = tryResolveVoiceAsset(voiceData.audioUrl); // RT-F2: path traversal guard (non-fatal)
       }
     }
 
@@ -415,6 +436,13 @@ async function processQueue() {
 
     if (resolvedVoicePath) {
       pythonArgs.push('--voicePath', resolvedVoicePath);
+    }
+
+    // Forward the user-selected pitch shift (semitones) to the engine. Without
+    // this the slider in the UI was collected and stored but never applied.
+    const numericPitch = Math.trunc(Number(pitch) || 0);
+    if (numericPitch !== 0) {
+      pythonArgs.push('--pitch', String(numericPitch));
     }
 
     if (isAcapella) {
@@ -550,6 +578,22 @@ async function processQueue() {
 
   } catch (error) {
     console.error("Queue processing error:", error);
+    // Don't strand the job in 'pending' forever (the UI would spin indefinitely).
+    // Any error before the engine spawns — e.g. a malformed stored audioUrl that
+    // safeStoragePath rejects — must be surfaced as a failed status.
+    try {
+      const stuck = await dbInvoke("get", "jobs", jobId);
+      if (stuck) {
+        await dbInvoke("upsert", "jobs", jobId, {
+          ...stuck,
+          status: 'failed',
+          progress: -1,
+          message: `Job setup failed: ${error instanceof Error ? error.message : String(error)}`
+        });
+      }
+    } catch (markErr) {
+      console.error("Failed to mark job as failed:", markErr);
+    }
     isProcessing = false;
     processQueue();
   }
@@ -801,6 +845,14 @@ app.post('/api/covers/create', coverCreateLimiter, async (req, res) => {
     return res.status(400).json({ error: "Invalid YouTube URL format" });
   }
 
+  // Restrict audioUrl to internal asset paths. It is later handed to the Python
+  // engine, which copies the referenced local path into served storage — so an
+  // unvalidated value (e.g. "/etc/passwd" or "../../secret") is a local-file
+  // disclosure vector. Only allow paths under the public /assets/ mount.
+  if (audioUrl && (typeof audioUrl !== 'string' || !audioUrl.startsWith('/assets/') || audioUrl.includes('..'))) {
+    return res.status(400).json({ error: "Invalid audioUrl" });
+  }
+
   const jobId = uuidv4();
 
   try {
@@ -853,7 +905,11 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  // Bind to loopback only. This is a single-user, local-first app with NO
+  // authentication (every record is owned by SYSTEM_USER), so listening on
+  // 0.0.0.0 would expose the whole API — uploads, deletes, file reads — to the
+  // LAN. The README documents localhost-only access.
+  app.listen(PORT, "127.0.0.1", () => {
     console.log(`Server running on http://localhost:${PORT}`);
     // APP-C-PC1-001: Do not log env var names — they can reveal secrets presence
   });

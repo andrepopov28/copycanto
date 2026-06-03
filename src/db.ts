@@ -63,7 +63,8 @@ export const getDocs = async (q: any) => {
 
   let data = await apiFetch(`/api/db/${collectionName}`);
   
-  // Basic filtering mock
+  // Basic filtering mock. Constraints are applied in the order supplied by the
+  // caller (where → orderBy → limit), which matches how query() builds them.
   if (data && constraints) {
     constraints.forEach((c: any) => {
       if (c.type === 'where') {
@@ -73,6 +74,22 @@ export const getDocs = async (q: any) => {
           if (op === 'in') return Array.isArray(value) && value.includes(item[field]);
           return true;
         });
+      } else if (c.type === 'orderBy') {
+        const { field, dir } = c;
+        const mult = dir === 'desc' ? -1 : 1;
+        data = [...data].sort((a: any, b: any) => {
+          const av = a[field];
+          const bv = b[field];
+          // Push null/undefined to the end regardless of direction.
+          if (av == null && bv == null) return 0;
+          if (av == null) return 1;
+          if (bv == null) return -1;
+          if (av < bv) return -1 * mult;
+          if (av > bv) return 1 * mult;
+          return 0;
+        });
+      } else if (c.type === 'limit') {
+        if (typeof c.n === 'number' && c.n >= 0) data = data.slice(0, c.n);
       }
     });
   }

@@ -25,6 +25,10 @@ def main():
     parser.add_argument("--inputUrl", required=True)
     parser.add_argument("--isAcapella", action="store_true")
     parser.add_argument("--engine", default="rvc")
+    # Accept (and ignore) the same optional flags the server passes to the real
+    # engine, so the simulator doesn't crash on argparse when MOCK_ENGINE=true.
+    parser.add_argument("--highQuality", action="store_true", default=False)
+    parser.add_argument("--pitch", type=int, default=0)
     args = parser.parse_args()
 
     job_id = args.jobId
